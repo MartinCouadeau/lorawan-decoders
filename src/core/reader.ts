@@ -33,8 +33,19 @@ export class ByteReader {
     return this.remaining >= n;
   }
 
+  /**
+   * Move the cursor to an absolute offset. Validates the destination rather
+   * than the distance, so seeking backwards — to re-read a field under a
+   * different interpretation, for instance — works.
+   */
   seek(offset: number): void {
-    this.require(offset - this.cursor);
+    if (!Number.isInteger(offset) || offset < 0 || offset > this.bytes.length) {
+      throw new DecodeError(
+        'out_of_bounds',
+        `cannot seek to offset ${offset}: payload is ${this.bytes.length} byte(s)`,
+        { offset, length: this.bytes.length },
+      );
+    }
     this.cursor = offset;
   }
 

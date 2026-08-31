@@ -2,22 +2,58 @@
   "name": "lorawan-decoders",
   "version": "0.1.0",
   "description": "Typed, vendor-agnostic LoRaWAN payload decoders with a normalized measurement schema. Milesight, Netvox and Ellenex, written clean-room from public documentation.",
-  "keywords": ["lorawan", "iot", "payload", "decoder", "codec", "thingsboard", "chirpstack", "ttn", "milesight", "netvox", "ellenex"],
+  "keywords": [
+    "lorawan",
+    "iot",
+    "payload",
+    "decoder",
+    "codec",
+    "thingsboard",
+    "chirpstack",
+    "ttn",
+    "milesight",
+    "netvox",
+    "ellenex"
+  ],
   "license": "MIT",
   "author": "Martín Couadeau",
-  "repository": { "type": "git", "url": "https://github.com/MartinCouadeau/lorawan-decoders.git" },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/MartinCouadeau/lorawan-decoders.git"
+  },
   "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "exports": {
-    ".": { "types": "./dist/index.d.ts", "default": "./dist/index.js" },
-    "./adapters/thingsboard": { "types": "./dist/adapters/thingsboard.d.ts", "default": "./dist/adapters/thingsboard.js" },
-    "./adapters/chirpstack": { "types": "./dist/adapters/chirpstack.d.ts", "default": "./dist/adapters/chirpstack.js" },
-    "./adapters/ttn": { "types": "./dist/adapters/ttn.d.ts", "default": "./dist/adapters/ttn.js" }
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    },
+    "./adapters/thingsboard": {
+      "types": "./dist/adapters/thingsboard.d.ts",
+      "default": "./dist/adapters/thingsboard.js"
+    },
+    "./adapters/chirpstack": {
+      "types": "./dist/adapters/chirpstack.d.ts",
+      "default": "./dist/adapters/chirpstack.js"
+    },
+    "./adapters/ttn": {
+      "types": "./dist/adapters/ttn.d.ts",
+      "default": "./dist/adapters/ttn.js"
+    }
   },
-  "bin": { "lorawan-decode": "./dist/cli.js" },
-  "files": ["dist", "README.md", "LICENSE", "NOTICE.md"],
-  "engines": { "node": ">=18" },
+  "bin": {
+    "lorawan-decode": "./dist/cli.js"
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE",
+    "NOTICE.md"
+  ],
+  "engines": {
+    "node": ">=20"
+  },
   "scripts": {
     "build": "tsc -p tsconfig.build.json",
     "typecheck": "tsc --noEmit",
@@ -31,10 +67,10 @@
     "@types/node": "^22.10.0",
     "@typescript-eslint/eslint-plugin": "^8.18.0",
     "@typescript-eslint/parser": "^8.18.0",
-    "@vitest/coverage-v8": "^2.1.8",
+    "@vitest/coverage-v8": "^4.1.11",
     "eslint": "^8.57.1",
     "tsx": "^4.19.2",
     "typescript": "^5.7.2",
-    "vitest": "^2.1.8"
+    "vitest": "^4.1.11"
   }
 }

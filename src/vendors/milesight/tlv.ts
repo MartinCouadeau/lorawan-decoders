@@ -31,6 +31,38 @@ export interface ChannelSpec {
 
 export type ChannelMap = Record<string, ChannelSpec>;
 
+/**
+ * Builds the map key for a channel: `"03/67"` is channel id 0x03, channel type
+ * 0x67. Two numbers because they are two separate bytes on the wire, and you
+ * need both to identify a reading:
+ *
+ *   01 75 5C   03 67 01 01   04 82 44 08   05 00 01
+ *   |  |  +- 92 %  |  |  +------ 25.7 C
+ *   |  +----- type: what kind of quantity, and therefore how wide the
+ *   |           data is and how it scales (0x67 is always int16 LE, tenths)
+ *   +-------- id: which slot on the device
+ *
+ * Neither byte is sufficient alone:
+ *
+ *  - **id alone**: the same slot means different things on different models.
+ *    `03/00` is the door magnet on a WS301 and the leak sensor on a WS303.
+ *  - **type alone**: a device can report the same type on several slots. The
+ *    AM308L puts PM2.5 on `0b/7d` and PM10 on `0c/7d`. And the reverse --
+ *    `08/7d` is tVOC as an index while `08/e6` is tVOC in ug/m3, same slot,
+ *    different unit.
+ *
+ * Two conventions worth knowing: an id with the high bit set is the alarm
+ * variant of the same channel (`83/67` is `03/67` plus a trailing alarm byte),
+ * and id `0xff` is a reserved namespace for device metadata rather than sensor
+ * readings.
+ *
+ * Some type bytes line up with Cayenne LPP / IPSO -- 0x00 digital input, 0x67
+ * temperature, 0x68 humidity, 0x73 barometer, 0x7d concentration, 0x82
+ * distance. Others (0x75 battery, 0xce history, 0xcf tilt, 0xd2 counter) are
+ * Milesight's own. Milesight does not document this correspondence anywhere;
+ * it is an observed pattern, useful for guessing at an unfamiliar type byte
+ * and not safe to rely on.
+ */
 export function channelKey(id: number, type: number): string {
   return `${id.toString(16).padStart(2, '0')}/${type.toString(16).padStart(2, '0')}`;
 }

@@ -25,7 +25,7 @@ anything:
 
 Decode each of them in its own bespoke way and you end up with a fleet where
 `temperature` means `°C` on one device, tenths of a degree on another, and a raw
-ADC count on a third — a problem that surfaces the day someone writes an alarm
+ADC count on a third. A problem that surfaces the day someone writes an alarm
 rule across device types.
 
 This library decodes each vendor's format faithfully, then normalizes: every
