@@ -170,6 +170,32 @@ in millivolts. One character apart, both plausible on the same device.
 - No status or alarm flag field is documented for any Ellenex model. None is
   invented here.
 
+## Dragino
+
+### Battery carries a status in its top two bits
+
+Bytes 0–1 are not a plain millivolt reading: bits 15–14 are a four-level
+battery status (`ultra_low`, `low`, `ok`, `good`) and bits 13–0 are millivolts.
+`0xCBF6` is 3.062 V and "good", not 52.2 V. Both come out as separate
+measurements.
+
+### Byte 6 changes the layout of everything after it
+
+The external-sensor type byte selects how bytes 7–10 are read: a DS18B20
+temperature, an interrupt pin, lux, an ADC in millivolts, or a 16- or 32-bit
+counter. Bit 7 of the same byte means "configured but not connected" on
+firmware 1.8 and later. This library emits the external reading only when the
+probe is both configured and connected, and warns otherwise. The DS18B20 sentinel
+`0x7FFF` is never emitted as a temperature.
+
+### Not verified
+
+- Only external type `0x01` (DS18B20) has a vendor worked example. Types `0x04`
+  to `0x08` are implemented from the manual's byte tables and not verified
+  against hardware.
+- The LHT65N is registered as an alias of the LHT65 because Dragino document
+  the same frame for both. A capture from an LHT65N would confirm it.
+
 ## Verified against documentation, not hardware
 
 Every format in this library is verified against vendor documentation and, where

@@ -86,6 +86,32 @@ const EM300_SLD: ChannelMap = {
   }),
 };
 
+// --- EM300-TH / AM103 --------------------------------------------------------
+// Temperature and humidity, with a 20/ce history record of timestamp + the same
+// two readings. AM103 adds CO2 on 07/7d; the AM103L variant adds light on 06/cb.
+const EM300_TH: ChannelMap = {
+  '01/75': battery(),
+  '03/67': temperatureC(),
+  '04/68': humidityPct(),
+  '20/ce': history(7, (r, at, emit) => {
+    emit.measurement({ key: 'temperature', kind: 'temperature', unit: Unit.CELSIUS, value: round(r.i16le() / 10, 1), at });
+    emit.measurement({ key: 'humidity', kind: 'humidity', unit: Unit.PERCENT, value: round(r.u8() / 2, 1), at });
+  }),
+};
+
+const AM103: ChannelMap = {
+  '01/75': battery(),
+  '03/67': temperatureC(),
+  '04/68': humidityPct(),
+  '06/cb': numeric({ key: 'light_level', kind: 'illuminance', type: 'u8', unit: Unit.INDEX }),
+  '07/7d': numeric({ key: 'co2', kind: 'co2', type: 'u16le', unit: Unit.PPM }),
+  '20/ce': history(9, (r, at, emit) => {
+    emit.measurement({ key: 'temperature', kind: 'temperature', unit: Unit.CELSIUS, value: round(r.i16le() / 10, 1), at });
+    emit.measurement({ key: 'humidity', kind: 'humidity', unit: Unit.PERCENT, value: round(r.u8() / 2, 1), at });
+    emit.measurement({ key: 'co2', kind: 'co2', unit: Unit.PPM, value: r.u16le(), at });
+  }),
+};
+
 // --- EM500 series ------------------------------------------------------------
 const EM500_UDL: ChannelMap = {
   '01/75': battery(),
@@ -189,6 +215,7 @@ export const MILESIGHT_MODELS: readonly ModelDefinition[] = [
   model('EM400-TLD', 'ToF laser distance/level sensor with temperature', EM400, { aliases: ['EM400TLD'] }),
   model('EM400-MUD', 'mmWave distance/level sensor with temperature', EM400, { aliases: ['EM400MUD'] }),
   model('EM300-SLD', 'Temperature, humidity and spot water-leak sensor', EM300_SLD, { aliases: ['EM300SLD'] }),
+  model('EM300-TH', 'Temperature and humidity sensor', EM300_TH, { aliases: ['EM300TH'] }),
   model('EM310-TILT', 'Three-axis tilt sensor with per-axis thresholds', EM310_TILT, { aliases: ['EM310TILT'] }),
   model('EM500-UDL', 'Ultrasonic distance/level sensor', EM500_UDL, { aliases: ['EM500UDL'] }),
   model('EM500-PP', 'Pipe pressure sensor', EM500_PP, { aliases: ['EM500PP'] }),
@@ -197,6 +224,7 @@ export const MILESIGHT_MODELS: readonly ModelDefinition[] = [
   model('WS301', 'Magnetic contact / door sensor', WS301, { attributes: { ...COMMON_ATTRIBUTES, ...SHORT_SERIAL } }),
   model('WS302', 'Sound level sensor', WS302),
   model('WS303', 'Spot water-leak sensor', WS303),
+  model('AM103', 'Temperature, humidity and CO2 sensor (AM103L adds light level)', AM103, { aliases: ['AM103L'] }),
   model('AM308L', 'Indoor air quality sensor (CO2, tVOC, PM, PIR)', AM308L),
   model('GS301', 'Odour/gas sensor (NH3, H2S)', GS301),
   model('VS132', '3D ToF people counter', VS132, { aliases: ['VS132-P'], attributes: VS_ATTRIBUTES }),

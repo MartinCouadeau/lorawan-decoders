@@ -1,7 +1,7 @@
 {
   "name": "lorawan-decoders",
   "version": "0.1.0",
-  "description": "Typed, vendor-agnostic LoRaWAN payload decoders with a normalized measurement schema. Milesight, Netvox and Ellenex, written clean-room from public documentation.",
+  "description": "Typed, vendor-agnostic LoRaWAN payload decoders with a normalized measurement schema. Milesight, Netvox, Ellenex and Dragino, written clean-room from public documentation.",
   "keywords": [
     "lorawan",
     "iot",
@@ -13,7 +13,8 @@
     "ttn",
     "milesight",
     "netvox",
-    "ellenex"
+    "ellenex",
+    "dragino"
   ],
   "license": "MIT",
   "author": "Martín Couadeau",
@@ -54,8 +55,12 @@
   "engines": {
     "node": ">=20"
   },
+  "publishConfig": {
+    "access": "public"
+  },
   "scripts": {
     "build": "tsc -p tsconfig.build.json",
+    "prepublishOnly": "npm run typecheck && npm run lint && npm test && npm run build",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "test:watch": "vitest",

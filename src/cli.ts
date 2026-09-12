@@ -8,7 +8,7 @@ const USAGE = `lorawan-decode — decode a LoRaWAN payload from the command line
   lorawan-decode --list [vendor]
 
 Options:
-  --vendor, -v     Vendor name (milesight, netvox, ellenex)
+  --vendor, -v     Vendor name (milesight, netvox, ellenex, dragino)
   --model,  -m     Model name; separators and case are ignored
   --hex,    -x     Payload as hex; spaces, colons and dashes allowed
   --fport,  -p     fPort the uplink arrived on
