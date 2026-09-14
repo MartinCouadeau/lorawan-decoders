@@ -52,7 +52,7 @@ describe('DecoderRegistry', () => {
   });
 
   it('ships every vendor in the default registry', () => {
-    expect(registry.vendors()).toEqual(['Ellenex', 'Milesight', 'Netvox']);
+    expect(registry.vendors()).toEqual(['Dragino', 'Ellenex', 'Milesight', 'Netvox']);
     expect(registry.list().length).toBeGreaterThan(25);
   });
 

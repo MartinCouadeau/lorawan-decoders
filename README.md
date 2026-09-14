@@ -1,13 +1,13 @@
 # lorawan-decoders
 
 Typed LoRaWAN payload decoders with one normalized output schema, for Milesight,
-Netvox and Ellenex devices.
+Netvox, Ellenex and Dragino devices.
 
 [![CI](https://github.com/MartinCouadeau/lorawan-decoders/actions/workflows/ci.yml/badge.svg)](https://github.com/MartinCouadeau/lorawan-decoders/actions/workflows/ci.yml)
 ![TypeScript](https://img.shields.io/badge/TypeScript-strict-blue)
 ![License](https://img.shields.io/badge/license-MIT-green)
 
-**31 decoders covering 130 model names across 3 vendors**, written clean-room
+**34 decoders covering 136 model names across 4 vendors**, written clean-room
 from public vendor documentation. No copied vendor code — see
 [Provenance](#provenance-and-licensing).
 
@@ -16,12 +16,12 @@ from public vendor documentation. No copied vendor code — see
 Every LoRaWAN vendor invents their own wire format, and none of them agree on
 anything:
 
-| | Milesight | Netvox | Ellenex |
-|---|---|---|---|
-| Structure | channel/type TLV, **no length field** | fixed 11-byte frame | fixed 8-byte frame, or CBOR |
-| Endianness | little | **big** | **big** |
-| Battery | percent, 1 byte | volts in 7 bits + a flag in bit 7 | volts × 0.1 |
-| Scaling | per channel, in the docs | multiplier byte, encoded two different ways | **not on the wire at all** |
+| | Milesight | Netvox | Ellenex | Dragino |
+|---|---|---|---|---|
+| Structure | channel/type TLV, **no length field** | fixed 11-byte frame | fixed 8-byte frame, or CBOR | fixed 11-byte frame, tail depends on byte 6 |
+| Endianness | little | **big** | **big** | **big** |
+| Battery | percent, 1 byte | volts in 7 bits + a flag in bit 7 | volts × 0.1 | millivolts in 14 bits + status in the top 2 |
+| Scaling | per channel, in the docs | multiplier byte, encoded two different ways | **not on the wire at all** | fixed per field |
 
 Decode each of them in its own bespoke way and you end up with a fleet where
 `temperature` means `°C` on one device, tenths of a degree on another, and a raw
@@ -201,13 +201,15 @@ matters here:
 - **Netvox** formats come from their published product manuals and per-device
   entries in the TTN Device Repository, whose terms permit reuse of individual
   device information.
+- **Dragino** formats come from their public user manuals and the Apache-2.0
+  TTN Device Repository entries. Their own decoder repository is not used.
 
 Every `ModelDefinition` carries a `source` field naming where its format came
 from. See [NOTICE.md](NOTICE.md).
 
 ## Status
 
-v0.1. The three vendors here are the ones I have worked with most; the
+v0.1. The four vendors here are the ones I have worked with most; the
 architecture is built for adding more. Issues and PRs welcome, particularly test
 vectors captured from real hardware — several formats in here are verified
 against vendor documentation but not against a device I own.

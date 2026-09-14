@@ -56,6 +56,15 @@ consulted — their repository's full commit history, the TTN entries, and their
 datasheets. This library surfaces them as an attribute rather than guessing at
 their meaning.
 
+## Dragino
+
+**Format source:** the LHT65 and LHT65N user manuals published on
+wiki.dragino.com, which document the 11-byte frame byte by byte, plus the
+Apache-2.0 codec and examples in the TTN Device Repository.
+
+Dragino also publish a decoder repository on GitHub. It was not consulted; the
+byte layout in the manual is sufficient and the implementation here is new.
+
 ## Test vectors
 
 Where a vendor publishes a worked example — a hex payload with the values they

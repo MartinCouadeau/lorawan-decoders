@@ -67,6 +67,57 @@ describe('Milesight EM300-SLD', () => {
   });
 });
 
+describe('Milesight EM300-TH', () => {
+  // Milesight README worked example: battery 92 %, 30.8 °C, 50.5 % RH.
+  const uplink = run('Milesight', 'EM300-TH', '01755C 036734 01 046865');
+
+  it('decodes the vendor worked example', () => {
+    expect(valueOf(uplink, 'battery')).toBe(92);
+    expect(valueOf(uplink, 'temperature')).toBe(30.8);
+    expect(valueOf(uplink, 'humidity')).toBe(50.5);
+    expect(uplink.warnings).toEqual([]);
+  });
+
+  it('decodes negative temperatures', () => {
+    expect(valueOf(run('Milesight', 'EM300-TH', '0367F9FF'), 'temperature')).toBe(-0.7);
+  });
+
+  it('timestamps history records', () => {
+    const history = run('Milesight', 'EM300-TH', '20ce' + '00105e5f' + '0101' + '65');
+    expect(pick(history, 'temperature').at).toBe(new Date(0x5f5e1000 * 1000).toISOString());
+    expect(valueOf(history, 'humidity')).toBe(50.5);
+  });
+});
+
+describe('Milesight AM103', () => {
+  const uplink = run('Milesight', 'AM103', '017564 03671001 046865 077DA406');
+
+  it('decodes temperature, humidity and CO2', () => {
+    expect(valueOf(uplink, 'battery')).toBe(100);
+    expect(valueOf(uplink, 'temperature')).toBe(27.2);
+    expect(valueOf(uplink, 'humidity')).toBe(50.5);
+    expect(valueOf(uplink, 'co2')).toBe(1700);
+    expect(pick(uplink, 'co2').unit).toBe('ppm');
+  });
+
+  it('reads the CO2 word little-endian', () => {
+    // Same convention as the EM500-CO2 vendor example (7D6704 -> 1127 ppm).
+    expect(valueOf(run('Milesight', 'AM103', '077D6704'), 'co2')).toBe(1127);
+  });
+
+  it('accepts AM103L and decodes its light level channel', () => {
+    const l = run('Milesight', 'AM103L', '06cb03');
+    expect(l.model).toBe('AM103');
+    expect(valueOf(l, 'light_level')).toBe(3);
+  });
+
+  it('decodes history records with CO2', () => {
+    const history = run('Milesight', 'AM103', '20ce' + '00105e5f' + '0101' + '65' + 'A406');
+    expect(valueOf(history, 'co2')).toBe(1700);
+    expect(pick(history, 'co2').at).toBe(new Date(0x5f5e1000 * 1000).toISOString());
+  });
+});
+
 describe('Milesight EM310-TILT', () => {
   const uplink = run('Milesight', 'EM310-TILT', '03CF00000000282307');
 
