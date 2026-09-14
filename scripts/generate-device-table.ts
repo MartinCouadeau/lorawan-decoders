@@ -3,6 +3,7 @@
  * never drift from the code. Run with `npm run devices`.
  */
 import { writeFileSync } from 'node:fs';
+import { accessorName } from '../src/core/registry.js';
 import { registry } from '../src/index.js';
 
 const rows: string[] = [];
@@ -10,14 +11,29 @@ let totalVariants = 0;
 
 for (const vendor of registry.vendors()) {
   const models = registry.list().filter((d) => d.vendor === vendor);
-  rows.push(`\n### ${vendor}\n`);
-  rows.push('| Decoder | Covers | fPort | Description |');
-  rows.push('|---|---|---|---|');
+  const ns = vendor.toLowerCase();
+  rows.push(`\n## ${vendor}\n`);
+  rows.push(`\`\`\`ts\nimport { ${ns} } from 'lorawan-decoders/${ns}';\n\`\`\`\n`);
+  rows.push('| Model | Name to pass | Accessor | Also answers to | fPort | Description |');
+  rows.push('|---|---|---|---|---|---|');
   for (const def of models) {
-    const variants = def.aliases?.length ?? 0;
-    totalVariants += 1 + variants;
-    const covers = variants > 0 ? `${1 + variants} model names` : '1 model';
-    rows.push(`| \`${def.model}\` | ${covers} | ${def.fPort ?? '—'} | ${def.description} |`);
+    const aliases = [...(def.aliases ?? [])];
+    totalVariants += 1 + aliases.length;
+    const also = aliases.length === 0 ? '—'
+      : aliases.length <= 4 ? aliases.map((a) => `\`${a}\``).join(', ')
+        : `${aliases.slice(0, 3).map((a) => `\`${a}\``).join(', ')} … (${aliases.length} names)`;
+    rows.push(
+      `| ${def.model} | \`'${def.model.toLowerCase()}'\` | \`${ns}.${accessorName(def.model)}\` | ${also} | ${def.fPort ?? '—'} | ${def.description} |`,
+    );
+  }
+  rows.push('\n### Telemetry keys\n');
+  rows.push('| Model | Keys (unit) |');
+  rows.push('|---|---|');
+  for (const def of models) {
+    const keys = Object.entries(def.keys)
+      .map(([k, u]) => (u === null ? `\`${k}\`` : `\`${k}\` (${u})`))
+      .join(', ');
+    rows.push(`| ${def.model} | ${keys} |`);
   }
   const sources = [...new Set(models.map((m) => m.source))];
   for (const source of sources) rows.push(`\n_Source: ${source}_`);
@@ -31,10 +47,20 @@ const content = `# Supported devices
 
 **${decoders} decoders covering ${totalVariants} model names across ${registry.vendors().length} vendors.**
 
-Model names are matched case-insensitively and ignore separators, so \`EM400-TLD\`,
-\`em400tld\` and \`EM400 TLD\` all resolve to the same decoder. That is not a
-nicety: in a real fleet the same device arrives spelled three different ways
-from three different integrations.
+Two ways to reach a decoder:
+
+- **Accessor**, typed: \`milesight.em310_tilt(payload)\`. The property name is the
+  model name lowercased with separators turned into \`_\`. Aliases are properties
+  too (\`milesight.em310tilt\`).
+- **Name string**, dynamic: \`decode('milesight', 'em310-tilt', payload)\`. Case and
+  separators are ignored, so \`EM310-TILT\`, \`EM310TILT\`, \`em310_tilt\` and
+  \`Em310 Tilt\` all resolve to the same decoder. That is not a nicety: in a real
+  fleet the same device arrives spelled three different ways from three
+  different integrations. Use \`isModel(vendor, name)\` to validate a profile name
+  up front; an unknown name throws with a did-you-mean suggestion.
+
+Every key below is in the shared vocabulary in [naming.md](naming.md), with the
+unit shown. Keys without a unit are states or events and carry a string.
 ${rows.join('\n')}
 
 ## Why the counts differ

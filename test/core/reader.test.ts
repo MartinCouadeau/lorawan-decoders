@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { ByteReader, parseHex, round, toHex } from '../../src/core/reader.js';
+import { ByteReader, parseBase64, parseHex, round, toHex } from '../../src/core/reader.js';
 import { DecodeError } from '../../src/core/errors.js';
 
 describe('parseHex', () => {
@@ -71,5 +71,17 @@ describe('round', () => {
 describe('toHex', () => {
   it('round-trips with parseHex', () => {
     expect(toHex(parseHex('00ff7a'))).toBe('00ff7a');
+  });
+});
+
+describe('parseBase64', () => {
+  it('decodes what ChirpStack and TTN send', () => {
+    expect(toHex(parseBase64('AXVcA2cBAQSCRAgFAAE='))).toBe('01755c0367010104824408050001');
+  });
+
+  it('rejects wrong length or alphabet instead of decoding garbage', () => {
+    expect(() => parseBase64('AXVc!')).toThrow(/base64/);
+    expect(() => parseBase64('AXVcA')).toThrow(/base64/);
+    expect(() => parseBase64('')).toThrow(/empty/);
   });
 });

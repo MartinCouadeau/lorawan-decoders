@@ -1,14 +1,41 @@
-import type { DecodeContext, DecodeResult, ModelDefinition } from '../../core/types.js';
+import type { DecodeContext, DecodeResult, KeySpec, ModelDefinition, Telemetry } from '../../core/types.js';
 import { Unit } from '../../core/units.js';
-import type { QuantityKind } from '../../core/units.js';
 import { looksLikeCbor } from './cbor.js';
-import { ELLENEX_FPORT, decodeLegacy, type LegacyOptions } from './legacy.js';
-import { decodeV6, type V6Options } from './v6.js';
+import { ELLENEX_FPORT, decodeLegacy, type LegacyOptions, type LegacyReading } from './legacy.js';
+import { V6_KEYS, decodeV6, type V6Options } from './v6.js';
 
 const SOURCE =
   'Ellenex public payload decoders (github.com/ellenex/lorawan-payload-decoders) and the ' +
   'Apache-2.0 TTN Device Repository codecs, verified against their published test vectors. ' +
   'Implemented from the documented layout; no vendor code reused (their repo carries no licence).';
+
+/** Keys the V6 generation can emit on any model, since the map is self-describing. */
+const V6_TELEMETRY_KEYS: Record<string, Unit | null> = Object.fromEntries(
+  Object.values(V6_KEYS).map((s) => [s.key, s.key === 'dry_contact' ? null : s.unit]),
+);
+
+export interface EllenexTelemetry extends Telemetry {
+  battery_voltage?: number;
+  pressure?: number;
+  pressure_raw?: number;
+  differential_pressure?: number;
+  differential_pressure_raw?: number;
+  level?: number;
+  level_raw?: number;
+  temperature?: number;
+  temperature_raw?: number;
+  distance?: number;
+  current?: number;
+  current_1?: number;
+  current_2?: number;
+  current_3?: number;
+  current_4?: number;
+  input_voltage?: number;
+  adc_raw?: number;
+  pulse_count?: number;
+  dry_contact?: string;
+  sensor_reading?: number;
+}
 
 /**
  * Ellenex ships two incompatible payload generations under the same model
@@ -16,20 +43,27 @@ const SOURCE =
  * a CBOR map header (0xBF, or 0xA0–0xB7) means Version 6; anything else of
  * 8 bytes is legacy. Callers who know can force it with `scaling.generation`.
  */
-function ellenexModel(
-  name: string,
+function ellenexModel<N extends string, A extends string>(
+  name: N,
+  alias: A,
   description: string,
   legacy: LegacyOptions,
   v6: V6Options = {},
-  aliases: string[] = [],
-): ModelDefinition {
+): ModelDefinition<EllenexTelemetry, N | A> {
+  const keys: Record<string, Unit | null> = { ...V6_TELEMETRY_KEYS };
+  for (const spec of [legacy.primary, legacy.secondary]) {
+    if (!spec) continue;
+    keys[spec.key] = spec.unit;
+    keys[spec.rawKey] = Unit.RAW;
+  }
   return {
     vendor: 'Ellenex',
     model: name,
+    aliases: [alias],
     description,
     source: SOURCE,
     fPort: ELLENEX_FPORT,
-    ...(aliases.length ? { aliases } : {}),
+    keys: keys as KeySpec<EllenexTelemetry>,
     decode(bytes: Uint8Array, ctx: DecodeContext): DecodeResult {
       const forced = ctx.options.scaling?.['generation'];
       const isV6 = forced === 'v6' || (forced !== 'legacy' && looksLikeCbor(bytes));
@@ -38,37 +72,36 @@ function ellenexModel(
   };
 }
 
-const pressure = (key = 'pressure', kind: QuantityKind = 'pressure') =>
-  ({ key, kind, unit: Unit.BAR }) as const;
-const level = () => ({ key: 'level', kind: 'level' as QuantityKind, unit: Unit.METRE }) as const;
-const temperature = () =>
-  ({ key: 'temperature', kind: 'temperature' as QuantityKind, unit: Unit.CELSIUS }) as const;
+const pressure: LegacyReading = { key: 'pressure', unit: Unit.KILOPASCAL, rawKey: 'pressure_raw' };
+const differential: LegacyReading = {
+  key: 'differential_pressure', unit: Unit.KILOPASCAL, rawKey: 'differential_pressure_raw',
+};
+const level: LegacyReading = { key: 'level', unit: Unit.METRE, rawKey: 'level_raw' };
+const temperature: LegacyReading = { key: 'temperature', unit: Unit.CELSIUS, rawKey: 'temperature_raw' };
+const sensorReading: LegacyReading = { key: 'sensor_reading', unit: Unit.RAW, rawKey: 'sensor_reading' };
 
-export const ELLENEX_MODELS: readonly ModelDefinition[] = [
+export const ELLENEX_MODELS = [
   // --- single-sense pressure -------------------------------------------------
-  ellenexModel('PTS2-L', 'Submersible pressure transmitter', { primary: pressure() }, {}, ['PTS2L']),
-  ellenexModel('PTS3-L', 'Submersible pressure transmitter (3-series)', { primary: pressure() }, {}, ['PTS3L']),
-  ellenexModel('PTC2-L', 'Compact pressure transmitter', { primary: pressure() }, {}, ['PTC2L']),
-  ellenexModel('PTF2-L', 'Flush pressure transmitter', { primary: pressure() }, {}, ['PTF2L']),
-  ellenexModel('PDS2-L', 'Differential pressure sensor',
-    { primary: pressure('differential_pressure', 'differential_pressure') }, {}, ['PDS2L']),
+  ellenexModel('PTS2-L', 'PTS2L', 'Submersible pressure transmitter', { primary: pressure }),
+  ellenexModel('PTS3-L', 'PTS3L', 'Submersible pressure transmitter (3-series)', { primary: pressure }),
+  ellenexModel('PTC2-L', 'PTC2L', 'Compact pressure transmitter', { primary: pressure }),
+  ellenexModel('PTF2-L', 'PTF2L', 'Flush pressure transmitter', { primary: pressure }),
+  ellenexModel('PDS2-L', 'PDS2L', 'Differential pressure sensor', { primary: differential }),
 
   // --- single-sense level ----------------------------------------------------
-  ellenexModel('PLS2-L', 'Submersible level sensor', { primary: level() }, {}, ['PLS2L']),
-  ellenexModel('PLC2-L', 'Compact level sensor', { primary: level() }, {}, ['PLC2L']),
-  ellenexModel('PLM2-L', 'Level sensor, mid range', { primary: level() }, {}, ['PLM2L']),
+  ellenexModel('PLS2-L', 'PLS2L', 'Submersible level sensor', { primary: level }),
+  ellenexModel('PLC2-L', 'PLC2L', 'Compact level sensor', { primary: level }),
+  ellenexModel('PLM2-L', 'PLM2L', 'Level sensor, mid range', { primary: level }),
 
   // --- multi-sense: primary reading plus temperature -------------------------
-  ellenexModel('PTD2-L', 'Pressure transmitter with temperature',
-    { primary: pressure(), secondary: temperature() }, {}, ['PTD2L']),
-  ellenexModel('PDT2-L', 'Differential pressure with temperature (reports pascals on V6)',
-    { primary: pressure('differential_pressure', 'differential_pressure'), secondary: temperature() },
-    { differentialPressureUnit: Unit.PASCAL }, ['PDT2L']),
-  ellenexModel('PLD2-L', 'Level sensor with temperature',
-    { primary: level(), secondary: temperature() }, {}, ['PLD2L']),
+  ellenexModel('PTD2-L', 'PTD2L', 'Pressure transmitter with temperature',
+    { primary: pressure, secondary: temperature }),
+  ellenexModel('PDT2-L', 'PDT2L', 'Differential pressure with temperature (V6 reports DP in pascals)',
+    { primary: differential, secondary: temperature }, { differentialPressureInPascals: true }),
+  ellenexModel('PLD2-L', 'PLD2L', 'Level sensor with temperature',
+    { primary: level, secondary: temperature }),
 
   // --- configurable input ----------------------------------------------------
-  ellenexModel('RS1-L', 'Universal sensor interface (4-20 mA, 0-10 V, PT100/PT1000, or pulse)',
-    { primary: { key: 'sensor_reading', kind: 'unknown', unit: Unit.RAW }, secondary: temperature() },
-    {}, ['RS1L']),
-];
+  ellenexModel('RS1-L', 'RS1L', 'Universal sensor interface (4-20 mA, 0-10 V, PT100/PT1000, or pulse)',
+    { primary: sensorReading, secondary: temperature }),
+] as const;

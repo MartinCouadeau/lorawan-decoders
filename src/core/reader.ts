@@ -166,8 +166,26 @@ export function parseHex(input: string): Uint8Array {
   return out;
 }
 
-export function toBytes(payload: string | Uint8Array | number[]): Uint8Array {
-  if (typeof payload === 'string') return parseHex(payload);
+const BASE64 = /^[A-Za-z0-9+/]*={0,2}$/;
+
+/**
+ * Base64 as ChirpStack and The Things Stack deliver it. Validated strictly:
+ * `01AB` is valid hex *and* valid base64, so a lenient decoder would silently
+ * produce plausible wrong bytes from a payload sent with the wrong encoding.
+ */
+export function parseBase64(input: string): Uint8Array {
+  const cleaned = input.replace(/\s+/g, '');
+  if (cleaned.length === 0) {
+    throw new DecodeError('empty_payload', 'payload is empty');
+  }
+  if (cleaned.length % 4 !== 0 || !BASE64.test(cleaned)) {
+    throw new DecodeError('bad_payload', 'payload is not valid base64');
+  }
+  return new Uint8Array(Buffer.from(cleaned, 'base64'));
+}
+
+export function toBytes(payload: string | Uint8Array | number[], encoding: 'hex' | 'base64' = 'hex'): Uint8Array {
+  if (typeof payload === 'string') return encoding === 'base64' ? parseBase64(payload) : parseHex(payload);
   if (payload instanceof Uint8Array) return payload;
   return Uint8Array.from(payload);
 }

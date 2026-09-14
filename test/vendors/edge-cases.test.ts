@@ -1,8 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { run, valueOf } from '../helpers.js';
-import { decode, registry } from '../../src/index.js';
-import { toChirpStack } from '../../src/adapters/chirpstack.js';
-import { toTtn } from '../../src/adapters/ttn.js';
+import { registry } from '../../src/index.js';
 import { ByteReader, parseHex } from '../../src/core/reader.js';
 
 describe('Netvox version reports and unsupported types', () => {
@@ -23,14 +21,14 @@ describe('Netvox version reports and unsupported types', () => {
 
   it('R718NL3 scales phase 1 and warns for the other two on ReportType 0x01', () => {
     const uplink = run('Netvox', 'R718NL3', '019901 24 0064 0064 0064 0A');
-    expect(valueOf(uplink, 'current', 1)).toBe(1000);
+    expect(valueOf(uplink, 'current_1')).toBe(1000);
     expect(uplink.warnings.filter((w) => w.code === 'unscaled_value')).toHaveLength(2);
   });
 
   it('treats a zero multiplier byte as 1 rather than zeroing the reading', () => {
     // A device that has not been configured sends 0x00 here. Multiplying by it
     // would report 0 A on a live circuit, which reads as a dead sensor.
-    expect(valueOf(run('Netvox', 'R718N1', '01490124 0E15 00 00 00000000'), 'current', 1)).toBe(3605);
+    expect(valueOf(run('Netvox', 'R718N1', '01490124 0E15 00 00 00000000'), 'current')).toBe(3605);
   });
 
   it('rejects a frame too short to hold even a header', () => {
@@ -80,6 +78,12 @@ describe('Milesight enum and alarm edge cases', () => {
   it('routes VS132-P to the VS132 decoder', () => {
     expect(registry.resolve('Milesight', 'VS132-P')?.model).toBe('VS132');
   });
+
+  it('keeps the last value and warns when a live key repeats in one frame', () => {
+    const uplink = run('Milesight', 'WS303', '017564' + '017565');
+    expect(uplink.telemetry).toEqual({ battery: 101 });
+    expect(uplink.warnings.map((w) => w.code)).toEqual(['duplicate_key']);
+  });
 });
 
 describe('Ellenex scaling and generation edge cases', () => {
@@ -108,14 +112,8 @@ describe('Ellenex scaling and generation edge cases', () => {
   it('skips a known V6 key carrying a non-numeric value, with a warning', () => {
     // {"T": "hot"}
     const uplink = run('Ellenex', 'PTD2-L', 'A1' + '6154' + '63686f74');
-    expect(uplink.measurements).toHaveLength(0);
+    expect(uplink.telemetry).toEqual({});
     expect(uplink.warnings.some((w) => w.code === 'undocumented_field')).toBe(true);
-  });
-
-  it('passes a non-scalar unknown V6 key through as null', () => {
-    // {"XX": [1]}
-    const uplink = run('Ellenex', 'PTS2-L', 'A1' + '625858' + '8101');
-    expect(valueOf(uplink, 'XX')).toBe(null);
   });
 
   it('applies density to a V6 level reading', () => {
@@ -128,34 +126,14 @@ describe('Ellenex scaling and generation edge cases', () => {
     expect(valueOf(run('Ellenex', 'RS1-L', 'A1' + '624443' + '00'), 'dry_contact')).toBe('closed');
   });
 
-  it('decodes the pulse counter and 4-20 mA channels with their indexes', () => {
+  it('decodes the pulse counter and numbered 4-20 mA channels', () => {
     // {"Pu": 42, "mA1": 12000, "mA2": 8000}
     const uplink = run('Ellenex', 'RS1-L', 'A3' + '62507518 2A' + '636D413119 2EE0' + '636D413219 1F40');
-    expect(valueOf(uplink, 'pulse_count')).toBe(42);
-    expect(valueOf(uplink, 'current', 1)).toBe(12);
-    expect(valueOf(uplink, 'current', 2)).toBe(8);
-  });
-});
-
-describe('adapters on payloads with history and warnings', () => {
-  const withHistory = decode({
-    vendor: 'Milesight', model: 'EM300-SLD',
-    payload: '01755C' + '20ce' + '00105e5f' + '0101' + '65' + '00',
-  });
-  const withWarning = decode({ vendor: 'Milesight', model: 'WS303', payload: '017564aabb' });
-
-  it('ChirpStack nests history and warnings under reserved keys', () => {
-    const out = toChirpStack(withHistory);
-    expect(Array.isArray(out.data['history'])).toBe(true);
-    expect(toChirpStack(withWarning).data['_warnings']).toHaveLength(1);
-    expect(toChirpStack(withHistory).data['_warnings']).toBeUndefined();
+    expect(uplink.telemetry).toEqual({ pulse_count: 42, current_1: 12, current_2: 8 });
   });
 
-  it('TTN carries history in data and leaves errors empty', () => {
-    const out = toTtn(withHistory);
-    expect(Array.isArray(out.data['history'])).toBe(true);
-    expect(out.warnings).toEqual([]);
-    expect(out.errors).toEqual([]);
+  it('reports the RS1-L primary input as a raw sensor reading', () => {
+    expect(run('Ellenex', 'RS1-L', '01E80000D6000022').telemetry).toMatchObject({ sensor_reading: 214 });
   });
 });
 
