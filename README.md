@@ -50,6 +50,38 @@ vocabulary: `temperature` is always °C, `distance` always millimetres,
 npm install lorawan-decoders
 ```
 
+Node 20 or later. ESM only.
+
+## Quick start
+
+```ts
+import { milesight, netvox, decode, isModel } from 'lorawan-decoders';
+
+// 1. Model known at compile time: typed accessor, per-model return type.
+const t = milesight.em310_tilt('01755C03CF00000000282307');
+//    { battery: 92, angle_x: 0, angle_threshold_x: 'trigger', angle_y: 0, angle_threshold_y: 'trigger',
+//      angle_z: 90, angle_threshold_z: 'trigger' }
+
+// 2. Model name arrives at runtime (device profile, MQTT topic, database row).
+const profile = 'R718N3';                       // any spelling: r718n3, R718-N3, r718 n3
+if (isModel('netvox', profile)) {
+  decode('netvox', profile, '014A0324006400640064 36', { fPort: 6 });
+  //  { battery_voltage: 3.6, battery_low: false, current_1: 1000, current_2: 500, current_3: 10000 }
+}
+
+// 3. Base64 straight from ChirpStack or TTN, and everything the decode produced.
+const d = decode('milesight', 'EM300-SLD', 'AXVcIM4AEF5fAQFlAQ==', {
+  encoding: 'base64', fPort: 85, detailed: true,
+});
+d.telemetry;   // { battery: 92 }
+d.history;     // [ { ts: '2020-09-13T12:26:40.000Z', temperature: 25.7, humidity: 50.5, leakage_status: 'leak' } ]
+d.warnings;    // []
+```
+
+More in [docs/examples.md](docs/examples.md): ChirpStack and TTN webhooks,
+forwarding to ThingsBoard, MQTT, batch decoding, error handling. Full
+signatures in [docs/api.md](docs/api.md).
+
 ## Two ways to call it
 
 **Typed accessor**, when you know the model at compile time:
@@ -251,7 +283,17 @@ See [docs/supported-devices.md](docs/supported-devices.md) — generated from th
 registry by `npm run devices`, so it cannot drift from the code. For every model
 it lists the name to pass, the accessor, the aliases, and the keys it emits.
 
-Full details on each vendor's quirks: [docs/vendor-quirks.md](docs/vendor-quirks.md).
+## Documentation
+
+| | |
+|---|---|
+| [docs/examples.md](docs/examples.md) | Worked examples with real payloads and outputs: webhooks, ThingsBoard, MQTT, history, errors |
+| [docs/api.md](docs/api.md) | Every export, option, output field, warning code and error code |
+| [docs/naming.md](docs/naming.md) | The naming rules and the full key-to-unit vocabulary |
+| [docs/supported-devices.md](docs/supported-devices.md) | Every model: name to pass, accessor, aliases, keys |
+| [docs/vendor-quirks.md](docs/vendor-quirks.md) | What is surprising or undocumented in each vendor's format, and what this library does about it |
+| [docs/adding-a-decoder.md](docs/adding-a-decoder.md) | How to add a model or a vendor |
+| [CHANGELOG.md](CHANGELOG.md) | What changed between versions |
 
 ## Adding a decoder
 
