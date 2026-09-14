@@ -1,5 +1,5 @@
 import { ByteReader, round } from '../../core/reader.js';
-import type { Attributes, DecodeContext, DecodeResult, Measurement } from '../../core/types.js';
+import type { Attributes, DecodeContext, DecodeResult, Reading } from '../../core/types.js';
 import { Unit } from '../../core/units.js';
 
 /**
@@ -17,6 +17,32 @@ import { Unit } from '../../core/units.js';
  * the others are implemented from the manual and not verified against hardware.
  */
 export const LHT65_FRAME_LENGTH = 11;
+
+export interface Lht65Telemetry {
+  battery_voltage?: number;
+  battery_status?: string;
+  temperature?: number;
+  temperature_external?: number;
+  humidity?: number;
+  input_level?: string;
+  interrupt?: string;
+  illuminance?: number;
+  input_voltage?: number;
+  pulse_count?: number;
+}
+
+export const LHT65_KEYS = {
+  battery_voltage: Unit.VOLT,
+  battery_status: null,
+  temperature: Unit.CELSIUS,
+  temperature_external: Unit.CELSIUS,
+  humidity: Unit.PERCENT,
+  input_level: null,
+  interrupt: null,
+  illuminance: Unit.LUX,
+  input_voltage: Unit.VOLT,
+  pulse_count: Unit.COUNT,
+} as const;
 
 const BATTERY_STATUS: Record<number, string> = {
   0: 'ultra_low', 1: 'low', 2: 'ok', 3: 'good',
@@ -44,28 +70,17 @@ export function decodeLht65(bytes: Uint8Array, ctx: DecodeContext): DecodeResult
   }
 
   const r = new ByteReader(bytes);
-  const measurements: Measurement[] = [];
+  const readings: Reading[] = [];
   const attributes: Attributes = {};
 
   const bat = r.u16be();
   const status = bat >> 14;
-  measurements.push({
-    key: 'battery_voltage', kind: 'battery', unit: Unit.VOLT,
-    value: round((bat & 0x3fff) / 1000, 3), channel: 'bytes 0-1',
-  });
-  measurements.push({
-    key: 'battery_status', kind: 'state', value: BATTERY_STATUS[status]!, code: status, channel: 'bytes 0-1',
-  });
-  measurements.push({
-    key: 'temperature', kind: 'temperature', unit: Unit.CELSIUS, index: 'internal',
-    value: round(r.i16be() / 100, 2), channel: 'bytes 2-3',
-  });
-  measurements.push({
-    key: 'humidity', kind: 'humidity', unit: Unit.PERCENT,
-    value: round(r.u16be() / 10, 1), channel: 'bytes 4-5',
-  });
+  readings.push({ key: 'battery_voltage', unit: Unit.VOLT, value: round((bat & 0x3fff) / 1000, 3) });
+  readings.push({ key: 'battery_status', value: BATTERY_STATUS[status]! });
+  readings.push({ key: 'temperature', unit: Unit.CELSIUS, value: round(r.i16be() / 100, 2) });
+  readings.push({ key: 'humidity', unit: Unit.PERCENT, value: round(r.u16be() / 10, 1) });
 
-  if (r.remaining === 0) return { measurements, attributes };
+  if (r.remaining === 0) return { readings, attributes };
 
   const extByte = r.u8();
   const extType = extByte & 0x7f;
@@ -80,7 +95,7 @@ export function decodeLht65(bytes: Uint8Array, ctx: DecodeContext): DecodeResult
     });
   }
 
-  if (r.remaining < 4) return { measurements, attributes };
+  if (r.remaining < 4) return { readings, attributes };
 
   switch (extType) {
     case 0x00:
@@ -92,43 +107,28 @@ export function decodeLht65(bytes: Uint8Array, ctx: DecodeContext): DecodeResult
           ctx.warn({ code: 'sensor_fault', offset: 7, message: 'DS18B20 probe absent (0x7FFF)' });
         }
       } else if (!disconnected) {
-        measurements.push({
-          key: 'temperature', kind: 'temperature', unit: Unit.CELSIUS, index: 'external',
-          value: round(raw / 100, 2), channel: 'bytes 7-8',
-        });
+        readings.push({ key: 'temperature_external', unit: Unit.CELSIUS, value: round(raw / 100, 2) });
       }
       break;
     }
     case 0x04: {
       const level = r.u8();
       const flag = r.u8();
-      measurements.push({
-        key: 'input_level', kind: 'state', value: level === 1 ? 'high' : 'low', code: level, channel: 'byte 7',
-      });
-      measurements.push({
-        key: 'interrupt', kind: 'event', value: flag === 1 ? 'triggered' : 'none', code: flag, channel: 'byte 8',
-      });
+      readings.push({ key: 'input_level', value: level === 1 ? 'high' : 'low' });
+      readings.push({ key: 'interrupt', value: flag === 1 ? 'triggered' : 'none' });
       break;
     }
     case 0x05:
-      measurements.push({
-        key: 'illuminance', kind: 'illuminance', unit: Unit.LUX, value: r.u16be(), channel: 'bytes 7-8',
-      });
+      readings.push({ key: 'illuminance', unit: Unit.LUX, value: r.u16be() });
       break;
     case 0x06:
-      measurements.push({
-        key: 'adc_voltage', kind: 'voltage', unit: Unit.MILLIVOLT, value: r.u16be(), channel: 'bytes 7-8',
-      });
+      readings.push({ key: 'input_voltage', unit: Unit.VOLT, value: round(r.u16be() / 1000, 3) });
       break;
     case 0x07:
-      measurements.push({
-        key: 'count', kind: 'counter', unit: Unit.COUNT, value: r.u16be(), channel: 'bytes 7-8',
-      });
+      readings.push({ key: 'pulse_count', unit: Unit.COUNT, value: r.u16be() });
       break;
     case 0x08:
-      measurements.push({
-        key: 'count', kind: 'counter', unit: Unit.COUNT, value: r.u32be(), channel: 'bytes 7-10',
-      });
+      readings.push({ key: 'pulse_count', unit: Unit.COUNT, value: r.u32be() });
       break;
     default:
       ctx.warn({
@@ -139,5 +139,5 @@ export function decodeLht65(bytes: Uint8Array, ctx: DecodeContext): DecodeResult
       attributes['external_raw'] = r.hex(4);
   }
 
-  return { measurements, attributes };
+  return { readings, attributes };
 }

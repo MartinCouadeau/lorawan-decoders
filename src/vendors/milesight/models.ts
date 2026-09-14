@@ -1,30 +1,31 @@
 import { round } from '../../core/reader.js';
-import type { ModelDefinition } from '../../core/types.js';
+import type { KeySpec, ModelDefinition } from '../../core/types.js';
 import { Unit } from '../../core/units.js';
 import { COMMON_ATTRIBUTES, SHORT_SERIAL, VS_ATTRIBUTES } from './attributes.js';
 import {
-  GAS_SENTINELS, alarmDistance, alarmTemperature, battery, distanceMm, enumState,
-  history, humidityPct, mergeChannels, numeric, soundLevels, struct, temperatureC,
+  GAS_SENTINELS, alarmDistance, alarmTemperature, battery, co2Ppm, distanceMm, enumState,
+  history, humidityPct, lightLevel, mergeChannels, numeric, soundLevels, struct, temperatureC,
   tiltAngles, udlDistanceAlarm,
 } from './channels.js';
-import { decodeTlv, type ChannelMap } from './tlv.js';
+import { decodeTlv, keysOf, type ChannelMap, type TelemetryOf } from './tlv.js';
 
 const SOURCE =
   'Milesight public payload documentation (github.com/Milesight-IoT/SensorDecoders READMEs). ' +
   'Implemented clean-room from the documented channel tables; no vendor code reused.';
 
-function model(
-  name: string,
+function model<M extends ChannelMap, N extends string, A extends string = never>(
+  name: N,
   description: string,
-  channels: ChannelMap,
-  opts: { aliases?: string[]; attributes?: ChannelMap } = {},
-): ModelDefinition {
+  channels: M,
+  opts: { aliases?: readonly A[]; attributes?: ChannelMap } = {},
+): ModelDefinition<TelemetryOf<M>, N | A> {
   const map = mergeChannels(opts.attributes ?? COMMON_ATTRIBUTES, channels);
   return {
     vendor: 'Milesight',
     model: name,
     description,
     source: SOURCE,
+    keys: keysOf(map) as KeySpec<TelemetryOf<M>>,
     ...(opts.aliases ? { aliases: opts.aliases } : {}),
     decode: (bytes, ctx) => decodeTlv(bytes, map, ctx),
   };
@@ -33,7 +34,7 @@ function model(
 // --- EM400 series: ToF / mmWave level, temperature ---------------------------
 // The TLD and MUD decode loops are identical; only the sensing technology
 // differs. One channel map, two registered models.
-const EM400: ChannelMap = {
+const EM400 = {
   '01/75': battery(),
   '03/67': temperatureC(),
   '04/82': distanceMm(),
@@ -43,146 +44,162 @@ const EM400: ChannelMap = {
 };
 
 // --- WS series ---------------------------------------------------------------
-const WS101: ChannelMap = {
+const WS101 = {
   '01/75': battery(),
-  'ff/2e': enumState('button_event', { 1: 'short_press', 2: 'long_press', 3: 'double_press' }, 'event'),
+  'ff/2e': enumState('button_event', { 1: 'short_press', 2: 'long_press', 3: 'double_press' }),
 };
 
-const WS201: ChannelMap = {
+const WS201 = {
   '01/75': battery(),
   '03/82': distanceMm(),
-  '04/d6': numeric({ key: 'remaining', kind: 'level', type: 'u8', unit: Unit.PERCENT }),
+  '04/d6': numeric({ key: 'remaining', type: 'u8', unit: Unit.PERCENT }),
 };
 
-const WS301: ChannelMap = {
+const WS301 = {
   '01/75': battery(),
   '03/00': enumState('magnet_status', { 0: 'close', 1: 'open' }),
   '04/00': enumState('tamper_status', { 0: 'installed', 1: 'uninstalled' }),
 };
 
-const WS302: ChannelMap = {
+const WS302 = {
   '01/75': battery(),
   '05/5b': soundLevels(),
 };
 
 // Note the collision with WS301: 03/00 is the magnet on WS301 and the leak
 // sensor here. Channel maps are per model precisely because of cases like this.
-const WS303: ChannelMap = {
+const WS303 = {
   '01/75': battery(),
   '03/00': enumState('leakage_status', { 0: 'normal', 1: 'leak' }),
 };
 
-// --- EM300-SLD ---------------------------------------------------------------
-const EM300_SLD: ChannelMap = {
+// --- EM300 series ------------------------------------------------------------
+type TempHumidity = { temperature?: number; humidity?: number };
+const TEMP_HUMIDITY_KEYS = { temperature: Unit.CELSIUS, humidity: Unit.PERCENT } as const;
+
+const EM300_SLD = {
   '01/75': battery(),
   '03/67': temperatureC(),
   '04/68': humidityPct(),
   '05/00': enumState('leakage_status', { 0: 'normal', 1: 'leak' }),
-  '20/ce': history(8, (r, at, emit) => {
-    emit.measurement({ key: 'temperature', kind: 'temperature', unit: Unit.CELSIUS, value: round(r.i16le() / 10, 1), at });
-    emit.measurement({ key: 'humidity', kind: 'humidity', unit: Unit.PERCENT, value: round(r.u8() / 2, 1), at });
-    const code = r.u8();
-    emit.measurement({ key: 'leakage_status', kind: 'state', value: code === 1 ? 'leak' : 'normal', code, at });
-  }),
+  '20/ce': history<TempHumidity & { leakage_status?: string }>(
+    8,
+    { ...TEMP_HUMIDITY_KEYS, leakage_status: null },
+    (r, emit) => {
+      emit.reading({ key: 'temperature', unit: Unit.CELSIUS, value: round(r.i16le() / 10, 1) });
+      emit.reading({ key: 'humidity', unit: Unit.PERCENT, value: round(r.u8() / 2, 1) });
+      emit.reading({ key: 'leakage_status', value: r.u8() === 1 ? 'leak' : 'normal' });
+    },
+  ),
 };
 
-// --- EM300-TH / AM103 --------------------------------------------------------
-// Temperature and humidity, with a 20/ce history record of timestamp + the same
-// two readings. AM103 adds CO2 on 07/7d; the AM103L variant adds light on 06/cb.
-const EM300_TH: ChannelMap = {
+const EM300_TH = {
   '01/75': battery(),
   '03/67': temperatureC(),
   '04/68': humidityPct(),
-  '20/ce': history(7, (r, at, emit) => {
-    emit.measurement({ key: 'temperature', kind: 'temperature', unit: Unit.CELSIUS, value: round(r.i16le() / 10, 1), at });
-    emit.measurement({ key: 'humidity', kind: 'humidity', unit: Unit.PERCENT, value: round(r.u8() / 2, 1), at });
+  '20/ce': history<TempHumidity>(7, TEMP_HUMIDITY_KEYS, (r, emit) => {
+    emit.reading({ key: 'temperature', unit: Unit.CELSIUS, value: round(r.i16le() / 10, 1) });
+    emit.reading({ key: 'humidity', unit: Unit.PERCENT, value: round(r.u8() / 2, 1) });
   }),
 };
 
-const AM103: ChannelMap = {
+// AM103 adds CO2 on 07/7d; the AM103L variant adds light on 06/cb.
+const AM103 = {
   '01/75': battery(),
   '03/67': temperatureC(),
   '04/68': humidityPct(),
-  '06/cb': numeric({ key: 'light_level', kind: 'illuminance', type: 'u8', unit: Unit.INDEX }),
-  '07/7d': numeric({ key: 'co2', kind: 'co2', type: 'u16le', unit: Unit.PPM }),
-  '20/ce': history(9, (r, at, emit) => {
-    emit.measurement({ key: 'temperature', kind: 'temperature', unit: Unit.CELSIUS, value: round(r.i16le() / 10, 1), at });
-    emit.measurement({ key: 'humidity', kind: 'humidity', unit: Unit.PERCENT, value: round(r.u8() / 2, 1), at });
-    emit.measurement({ key: 'co2', kind: 'co2', unit: Unit.PPM, value: r.u16le(), at });
+  '06/cb': lightLevel(),
+  '07/7d': co2Ppm(),
+  '20/ce': history<TempHumidity & { co2?: number }>(9, { ...TEMP_HUMIDITY_KEYS, co2: Unit.PPM }, (r, emit) => {
+    emit.reading({ key: 'temperature', unit: Unit.CELSIUS, value: round(r.i16le() / 10, 1) });
+    emit.reading({ key: 'humidity', unit: Unit.PERCENT, value: round(r.u8() / 2, 1) });
+    emit.reading({ key: 'co2', unit: Unit.PPM, value: r.u16le() });
   }),
 };
 
 // --- EM500 series ------------------------------------------------------------
-const EM500_UDL: ChannelMap = {
+const EM500_UDL = {
   '01/75': battery(),
   '03/82': distanceMm(),
   '83/e9': udlDistanceAlarm(),
-  '20/ce': history(6, (r, at, emit) => {
-    emit.measurement({ key: 'distance', kind: 'distance', unit: Unit.MILLIMETRE, value: r.u16le(), at });
+  '20/ce': history<{ distance?: number }>(6, { distance: Unit.MILLIMETRE }, (r, emit) => {
+    emit.reading({ key: 'distance', unit: Unit.MILLIMETRE, value: r.u16le() });
   }),
 };
 
 // Pressure here is signed and unscaled — raw kPa, no divisor. Confirmed against
 // the vendor's own worked example (037b0a00 -> 10 kPa).
-const EM500_PP: ChannelMap = {
+const EM500_PP = {
   '01/75': battery(),
-  '03/7b': numeric({ key: 'pressure', kind: 'pressure', type: 'i16le', unit: Unit.KILOPASCAL }),
-  '20/ce': history(6, (r, at, emit) => {
-    emit.measurement({ key: 'pressure', kind: 'pressure', unit: Unit.KILOPASCAL, value: r.i16le(), at });
+  '03/7b': numeric({ key: 'pressure', type: 'i16le', unit: Unit.KILOPASCAL }),
+  '20/ce': history<{ pressure?: number }>(6, { pressure: Unit.KILOPASCAL }, (r, emit) => {
+    emit.reading({ key: 'pressure', unit: Unit.KILOPASCAL, value: r.i16le() });
   }),
 };
 
-const EM310_TILT: ChannelMap = {
+const EM310_TILT = {
   '01/75': battery(),
   '03/cf': tiltAngles(),
 };
 
 // --- AM308L ------------------------------------------------------------------
 // tVOC arrives on channel id 0x08 under two different type bytes with two
-// different units. Same output key, unit only recoverable from the type byte.
-function am308History(tvocDivisor: number, tvocUnit: Unit) {
-  return history(20, (r, at, emit) => {
-    emit.measurement({ key: 'temperature', kind: 'temperature', unit: Unit.CELSIUS, value: round(r.i16le() / 10, 1), at });
-    emit.measurement({ key: 'humidity', kind: 'humidity', unit: Unit.PERCENT, value: round(r.u16le() / 2, 1), at });
-    const pir = r.u8();
-    emit.measurement({ key: 'pir', kind: 'occupancy', value: pir === 1 ? 'trigger' : 'idle', code: pir, at });
-    emit.measurement({ key: 'light_level', kind: 'illuminance', unit: Unit.INDEX, value: r.u8(), at });
-    emit.measurement({ key: 'co2', kind: 'co2', unit: Unit.PPM, value: r.u16le(), at });
-    emit.measurement({ key: 'tvoc', kind: 'tvoc', unit: tvocUnit, value: round(r.u16le() / tvocDivisor, 2), at });
-    emit.measurement({ key: 'pressure', kind: 'pressure', unit: Unit.HECTOPASCAL, value: round(r.u16le() / 10, 1), at });
-    emit.measurement({ key: 'pm2_5', kind: 'particulate', unit: Unit.MICROGRAM_PER_M3, value: r.u16le(), at });
-    emit.measurement({ key: 'pm10', kind: 'particulate', unit: Unit.MICROGRAM_PER_M3, value: r.u16le(), at });
-  });
+// different units, so it gets two keys: `tvoc` (µg/m³) and `tvoc_index`.
+type Am308History = TempHumidity & {
+  pir?: string; light_level?: number; co2?: number; barometric_pressure?: number;
+  pm2_5?: number; pm10?: number;
+};
+const AM308_HISTORY_KEYS = {
+  ...TEMP_HUMIDITY_KEYS, pir: null, light_level: Unit.INDEX, co2: Unit.PPM,
+  barometric_pressure: Unit.HECTOPASCAL, pm2_5: Unit.MICROGRAM_PER_M3, pm10: Unit.MICROGRAM_PER_M3,
+} as const;
+
+function am308History<K extends 'tvoc' | 'tvoc_index'>(tvocKey: K, tvocDivisor: number, tvocUnit: Unit) {
+  return history<Am308History & { [P in K]?: number }>(
+    20,
+    { ...AM308_HISTORY_KEYS, [tvocKey]: tvocUnit } as KeySpec<Am308History & { [P in K]?: number }>,
+    (r, emit) => {
+      emit.reading({ key: 'temperature', unit: Unit.CELSIUS, value: round(r.i16le() / 10, 1) });
+      emit.reading({ key: 'humidity', unit: Unit.PERCENT, value: round(r.u16le() / 2, 1) });
+      emit.reading({ key: 'pir', value: r.u8() === 1 ? 'trigger' : 'idle' });
+      emit.reading({ key: 'light_level', unit: Unit.INDEX, value: r.u8() });
+      emit.reading({ key: 'co2', unit: Unit.PPM, value: r.u16le() });
+      emit.reading({ key: tvocKey, unit: tvocUnit, value: round(r.u16le() / tvocDivisor, 2) });
+      emit.reading({ key: 'barometric_pressure', unit: Unit.HECTOPASCAL, value: round(r.u16le() / 10, 1) });
+      emit.reading({ key: 'pm2_5', unit: Unit.MICROGRAM_PER_M3, value: r.u16le() });
+      emit.reading({ key: 'pm10', unit: Unit.MICROGRAM_PER_M3, value: r.u16le() });
+    },
+  );
 }
 
-const AM308L: ChannelMap = {
+const AM308L = {
   '01/75': battery(),
   '03/67': temperatureC(),
   '04/68': humidityPct(),
-  '05/00': enumState('pir', { 0: 'idle', 1: 'trigger' }, 'occupancy'),
-  '06/cb': numeric({ key: 'light_level', kind: 'illuminance', type: 'u8', unit: Unit.INDEX }),
-  '07/7d': numeric({ key: 'co2', kind: 'co2', type: 'u16le', unit: Unit.PPM }),
-  '08/7d': numeric({ key: 'tvoc', kind: 'tvoc', type: 'u16le', unit: Unit.INDEX, divisor: 100, decimals: 2 }),
-  '08/e6': numeric({ key: 'tvoc', kind: 'tvoc', type: 'u16le', unit: Unit.MICROGRAM_PER_M3 }),
-  '09/73': numeric({ key: 'pressure', kind: 'pressure', type: 'u16le', unit: Unit.HECTOPASCAL, divisor: 10, decimals: 1 }),
-  '0b/7d': numeric({ key: 'pm2_5', kind: 'particulate', type: 'u16le', unit: Unit.MICROGRAM_PER_M3 }),
-  '0c/7d': numeric({ key: 'pm10', kind: 'particulate', type: 'u16le', unit: Unit.MICROGRAM_PER_M3 }),
+  '05/00': enumState('pir', { 0: 'idle', 1: 'trigger' }),
+  '06/cb': lightLevel(),
+  '07/7d': co2Ppm(),
+  '08/7d': numeric({ key: 'tvoc_index', type: 'u16le', unit: Unit.INDEX, divisor: 100, decimals: 2 }),
+  '08/e6': numeric({ key: 'tvoc', type: 'u16le', unit: Unit.MICROGRAM_PER_M3 }),
+  '09/73': numeric({ key: 'barometric_pressure', type: 'u16le', unit: Unit.HECTOPASCAL, divisor: 10, decimals: 1 }),
+  '0b/7d': numeric({ key: 'pm2_5', type: 'u16le', unit: Unit.MICROGRAM_PER_M3 }),
+  '0c/7d': numeric({ key: 'pm10', type: 'u16le', unit: Unit.MICROGRAM_PER_M3 }),
   '0e/01': enumState('buzzer_status', { 0: 'off', 1: 'on' }),
-  '20/ce': am308History(100, Unit.INDEX),
-  '21/ce': am308History(1, Unit.MICROGRAM_PER_M3),
+  '20/ce': am308History('tvoc_index', 100, Unit.INDEX),
+  '21/ce': am308History('tvoc', 1, Unit.MICROGRAM_PER_M3),
 };
 
 // --- GS301 -------------------------------------------------------------------
 // Channel ids are shifted down by one relative to AM308L: temperature is 0x02,
-// humidity 0x03. H2S appears twice at two resolutions.
-const GS301: ChannelMap = {
+// humidity 0x03. H2S appears twice at two resolutions, same key, same unit.
+const GS301 = {
   '01/75': battery(),
   '02/67': temperatureC(),
   '03/68': humidityPct(),
-  '04/7d': numeric({ key: 'nh3', kind: 'gas_concentration', type: 'u16le', unit: Unit.PPM, divisor: 100, decimals: 2, sentinels: GAS_SENTINELS }),
-  '05/7d': numeric({ key: 'h2s', kind: 'gas_concentration', type: 'u16le', unit: Unit.PPM, divisor: 100, decimals: 2, sentinels: GAS_SENTINELS }),
-  '06/7d': numeric({ key: 'h2s', kind: 'gas_concentration', type: 'u16le', unit: Unit.PPM, divisor: 1000, decimals: 3, sentinels: GAS_SENTINELS }),
-  '07/ea': struct(5, (r, emit) => {
+  '04/7d': numeric({ key: 'nh3', type: 'u16le', unit: Unit.PPM, divisor: 100, decimals: 2, sentinels: GAS_SENTINELS }),
+  '05/7d': numeric({ key: 'h2s', type: 'u16le', unit: Unit.PPM, divisor: 100, decimals: 2, sentinels: GAS_SENTINELS }),
+  '06/7d': numeric({ key: 'h2s', type: 'u16le', unit: Unit.PPM, divisor: 1000, decimals: 3, sentinels: GAS_SENTINELS }),
+  '07/ea': struct<{ calibration_result?: string }>(5, { calibration_result: null }, (r, emit) => {
     const sensor = r.u8();
     const sensorName = sensor === 0 ? 'nh3' : sensor === 1 ? 'h2s' : `unknown(${sensor})`;
     const type = r.u8();
@@ -194,24 +211,26 @@ const GS301: ChannelMap = {
     emit.attribute('calibration_sensor', sensorName);
     emit.attribute('calibration_type', type === 0 ? 'factory' : 'manual');
     emit.attribute('calibration_value', round(raw / (sensor === 1 ? 1000 : 100), 3));
-    emit.measurement({
-      key: 'calibration_result', kind: 'event', value: RESULT[code] ?? `unknown(${code})`, code,
-    });
+    emit.reading({ key: 'calibration_result', value: RESULT[code] ?? `unknown(${code})` });
   }),
-  'ff/7c': struct(43, (r, emit) => emit.attribute('sensor_id', r.ascii(43))),
+  'ff/7c': struct<Record<never, never>>(43, {}, (r, emit) => emit.attribute('sensor_id', r.ascii(43))),
 };
 
 // --- VS132 -------------------------------------------------------------------
-const VS132: ChannelMap = {
-  '03/d2': numeric({ key: 'total_counter', kind: 'counter', type: 'u32le', unit: Unit.COUNT, index: 'in' }),
-  '04/d2': numeric({ key: 'total_counter', kind: 'counter', type: 'u32le', unit: Unit.COUNT, index: 'out' }),
-  '05/cc': struct(4, (r, emit) => {
-    emit.measurement({ key: 'periodic_counter', kind: 'counter', unit: Unit.COUNT, index: 'in', value: r.u16le() });
-    emit.measurement({ key: 'periodic_counter', kind: 'counter', unit: Unit.COUNT, index: 'out', value: r.u16le() });
-  }),
+const VS132 = {
+  '03/d2': numeric({ key: 'total_counter_in', type: 'u32le', unit: Unit.COUNT }),
+  '04/d2': numeric({ key: 'total_counter_out', type: 'u32le', unit: Unit.COUNT }),
+  '05/cc': struct<{ periodic_counter_in?: number; periodic_counter_out?: number }>(
+    4,
+    { periodic_counter_in: Unit.COUNT, periodic_counter_out: Unit.COUNT },
+    (r, emit) => {
+      emit.reading({ key: 'periodic_counter_in', unit: Unit.COUNT, value: r.u16le() });
+      emit.reading({ key: 'periodic_counter_out', unit: Unit.COUNT, value: r.u16le() });
+    },
+  ),
 };
 
-export const MILESIGHT_MODELS: readonly ModelDefinition[] = [
+export const MILESIGHT_MODELS = [
   model('EM400-TLD', 'ToF laser distance/level sensor with temperature', EM400, { aliases: ['EM400TLD'] }),
   model('EM400-MUD', 'mmWave distance/level sensor with temperature', EM400, { aliases: ['EM400MUD'] }),
   model('EM300-SLD', 'Temperature, humidity and spot water-leak sensor', EM300_SLD, { aliases: ['EM300SLD'] }),
@@ -228,4 +247,4 @@ export const MILESIGHT_MODELS: readonly ModelDefinition[] = [
   model('AM308L', 'Indoor air quality sensor (CO2, tVOC, PM, PIR)', AM308L),
   model('GS301', 'Odour/gas sensor (NH3, H2S)', GS301),
   model('VS132', '3D ToF people counter', VS132, { aliases: ['VS132-P'], attributes: VS_ATTRIBUTES }),
-];
+] as const;

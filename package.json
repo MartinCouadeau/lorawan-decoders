@@ -1,7 +1,7 @@
 {
   "name": "lorawan-decoders",
-  "version": "0.1.0",
-  "description": "Typed, vendor-agnostic LoRaWAN payload decoders with a normalized measurement schema. Milesight, Netvox, Ellenex and Dragino, written clean-room from public documentation.",
+  "version": "0.2.0",
+  "description": "Typed LoRaWAN payload decoders that return one flat, vendor-agnostic telemetry object. Milesight, Netvox, Ellenex and Dragino, written clean-room from public documentation.",
   "keywords": [
     "lorawan",
     "iot",
@@ -30,17 +30,21 @@
       "types": "./dist/index.d.ts",
       "default": "./dist/index.js"
     },
-    "./adapters/thingsboard": {
-      "types": "./dist/adapters/thingsboard.d.ts",
-      "default": "./dist/adapters/thingsboard.js"
+    "./milesight": {
+      "types": "./dist/milesight.d.ts",
+      "default": "./dist/milesight.js"
     },
-    "./adapters/chirpstack": {
-      "types": "./dist/adapters/chirpstack.d.ts",
-      "default": "./dist/adapters/chirpstack.js"
+    "./netvox": {
+      "types": "./dist/netvox.d.ts",
+      "default": "./dist/netvox.js"
     },
-    "./adapters/ttn": {
-      "types": "./dist/adapters/ttn.d.ts",
-      "default": "./dist/adapters/ttn.js"
+    "./ellenex": {
+      "types": "./dist/ellenex.d.ts",
+      "default": "./dist/ellenex.js"
+    },
+    "./dragino": {
+      "types": "./dist/dragino.d.ts",
+      "default": "./dist/dragino.js"
     }
   },
   "bin": {
@@ -66,7 +70,9 @@
     "test:watch": "vitest",
     "coverage": "vitest run --coverage",
     "lint": "eslint src test --ext .ts",
-    "devices": "tsx scripts/generate-device-table.ts"
+    "devices": "tsx scripts/generate-device-table.ts",
+    "naming": "tsx scripts/generate-naming.ts",
+    "docs": "npm run devices && npm run naming"
   },
   "devDependencies": {
     "@types/node": "^22.10.0",

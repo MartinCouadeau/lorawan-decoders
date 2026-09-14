@@ -1,8 +1,7 @@
 import { round } from '../../core/reader.js';
 import { DecodeError } from '../../core/errors.js';
-import type { DecodeContext, DecodeResult, Measurement } from '../../core/types.js';
+import type { DecodeContext, DecodeResult, Reading } from '../../core/types.js';
 import { Unit } from '../../core/units.js';
-import type { QuantityKind } from '../../core/units.js';
 import { decodeCbor } from './cbor.js';
 
 /**
@@ -14,40 +13,43 @@ import { decodeCbor } from './cbor.js';
  *   `V` is a raw voltage input channel, also in millivolts.
  *
  * One character apart, different meanings, both plausible on the same device.
+ *
+ * Wire units are converted to the library vocabulary: bar → kPa (×100),
+ * metres → millimetres for `distance`, millivolts → volts.
  */
 
 interface KeySpec {
   key: string;
-  kind: QuantityKind;
   unit: Unit;
-  /** Wire value divided by this. */
-  divisor?: number;
+  /** Wire value multiplied by this. */
+  factor?: number;
   decimals?: number;
 }
 
-const KEYS: Record<string, KeySpec> = {
-  v: { key: 'battery_voltage', kind: 'battery', unit: Unit.VOLT, divisor: 1000, decimals: 3 },
-  P: { key: 'pressure', kind: 'pressure', unit: Unit.BAR, decimals: 4 },
-  DP: { key: 'differential_pressure', kind: 'differential_pressure', unit: Unit.BAR, decimals: 4 },
-  T: { key: 'temperature', kind: 'temperature', unit: Unit.CELSIUS, decimals: 2 },
-  L: { key: 'level', kind: 'level', unit: Unit.METRE, decimals: 4 },
-  D: { key: 'distance', kind: 'distance', unit: Unit.METRE, decimals: 4 },
-  mA: { key: 'current', kind: 'current', unit: Unit.MILLIAMPERE, divisor: 1000, decimals: 3 },
-  mA1: { key: 'current', kind: 'current', unit: Unit.MILLIAMPERE, divisor: 1000, decimals: 3 },
-  mA2: { key: 'current', kind: 'current', unit: Unit.MILLIAMPERE, divisor: 1000, decimals: 3 },
-  mA3: { key: 'current', kind: 'current', unit: Unit.MILLIAMPERE, divisor: 1000, decimals: 3 },
-  mA4: { key: 'current', kind: 'current', unit: Unit.MILLIAMPERE, divisor: 1000, decimals: 3 },
-  V: { key: 'input_voltage', kind: 'voltage', unit: Unit.VOLT, divisor: 1000, decimals: 3 },
-  mV: { key: 'adc_raw', kind: 'unknown', unit: Unit.RAW },
-  Pu: { key: 'pulse_count', kind: 'counter', unit: Unit.COUNT },
-  DC: { key: 'dry_contact', kind: 'state', unit: Unit.INDEX },
+const BAR_TO_KPA = 100;
+const PA_TO_KPA = 0.001;
+
+export const V6_KEYS: Record<string, KeySpec> = {
+  v: { key: 'battery_voltage', unit: Unit.VOLT, factor: 0.001, decimals: 3 },
+  P: { key: 'pressure', unit: Unit.KILOPASCAL, factor: BAR_TO_KPA, decimals: 2 },
+  DP: { key: 'differential_pressure', unit: Unit.KILOPASCAL, factor: BAR_TO_KPA, decimals: 2 },
+  T: { key: 'temperature', unit: Unit.CELSIUS, decimals: 2 },
+  L: { key: 'level', unit: Unit.METRE, decimals: 4 },
+  D: { key: 'distance', unit: Unit.MILLIMETRE, factor: 1000, decimals: 1 },
+  mA: { key: 'current', unit: Unit.MILLIAMPERE, factor: 0.001, decimals: 3 },
+  mA1: { key: 'current_1', unit: Unit.MILLIAMPERE, factor: 0.001, decimals: 3 },
+  mA2: { key: 'current_2', unit: Unit.MILLIAMPERE, factor: 0.001, decimals: 3 },
+  mA3: { key: 'current_3', unit: Unit.MILLIAMPERE, factor: 0.001, decimals: 3 },
+  mA4: { key: 'current_4', unit: Unit.MILLIAMPERE, factor: 0.001, decimals: 3 },
+  V: { key: 'input_voltage', unit: Unit.VOLT, factor: 0.001, decimals: 3 },
+  mV: { key: 'adc_raw', unit: Unit.RAW },
+  Pu: { key: 'pulse_count', unit: Unit.COUNT },
+  DC: { key: 'dry_contact', unit: Unit.INDEX },
 };
 
-const CHANNEL_INDEX: Record<string, number> = { mA1: 1, mA2: 2, mA3: 3, mA4: 4 };
-
 export interface V6Options {
-  /** Some models report DP in pascals rather than bar. */
-  differentialPressureUnit?: Unit;
+  /** PDT2-L reports DP in pascals rather than bar. */
+  differentialPressureInPascals?: boolean;
   /** Liquid density for level conversion; 1.0 water. */
   density?: number;
 }
@@ -60,21 +62,16 @@ export function decodeV6(bytes: Uint8Array, ctx: DecodeContext, opts: V6Options 
     });
   }
 
-  const measurements: Measurement[] = [];
+  const readings: Reading[] = [];
   const configuredDensity = ctx.options.scaling?.['density'];
   const density = opts.density ?? (typeof configuredDensity === 'number' ? configuredDensity : 1);
 
   for (const [wireKey, rawValue] of Object.entries(decoded)) {
-    const spec = KEYS[wireKey];
+    const spec = V6_KEYS[wireKey];
     if (!spec) {
       ctx.warn({
         code: 'unknown_channel',
-        message: `unknown Ellenex V6 key "${wireKey}"; value passed through unscaled`,
-      });
-      measurements.push({
-        key: wireKey, kind: 'unknown', unit: Unit.RAW,
-        value: typeof rawValue === 'number' || typeof rawValue === 'string' || typeof rawValue === 'boolean'
-          ? rawValue : null,
+        message: `unknown Ellenex V6 key "${wireKey}" (value ${JSON.stringify(rawValue)}) was ignored`,
       });
       continue;
     }
@@ -87,28 +84,19 @@ export function decodeV6(bytes: Uint8Array, ctx: DecodeContext, opts: V6Options 
       continue;
     }
 
-    let value = rawValue / (spec.divisor ?? 1);
-    let unit = spec.unit;
-
-    if (wireKey === 'DP' && opts.differentialPressureUnit) {
-      unit = opts.differentialPressureUnit;
-    }
-    if (wireKey === 'L' && density !== 1) {
-      value = value / density;
-    }
     if (wireKey === 'DC') {
-      measurements.push({
-        key: spec.key, kind: 'state', value: rawValue === 0 ? 'closed' : 'open', code: rawValue,
-      });
+      readings.push({ key: spec.key, value: rawValue === 0 ? 'closed' : 'open' });
       continue;
     }
 
-    measurements.push({
-      key: spec.key, kind: spec.kind, unit,
-      value: round(value, spec.decimals ?? 3),
-      ...(CHANNEL_INDEX[wireKey] !== undefined ? { index: CHANNEL_INDEX[wireKey] } : {}),
-    });
+    let factor = spec.factor ?? 1;
+    if (wireKey === 'DP' && opts.differentialPressureInPascals) factor = PA_TO_KPA;
+
+    let value = rawValue * factor;
+    if (wireKey === 'L' && density !== 1) value = value / density;
+
+    readings.push({ key: spec.key, unit: spec.unit, value: round(value, spec.decimals ?? 3) });
   }
 
-  return { measurements, attributes: { payload_generation: 'v6' } };
+  return { readings, attributes: { payload_generation: 'v6' } };
 }

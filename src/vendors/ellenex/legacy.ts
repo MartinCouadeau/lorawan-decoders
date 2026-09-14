@@ -1,8 +1,7 @@
 import { ByteReader, round, toHex } from '../../core/reader.js';
 import { DecodeError } from '../../core/errors.js';
-import type { Attributes, DecodeContext, DecodeResult, Measurement } from '../../core/types.js';
+import type { Attributes, DecodeContext, DecodeResult, Reading } from '../../core/types.js';
 import { Unit } from '../../core/units.js';
-import type { QuantityKind } from '../../core/units.js';
 
 /**
  * Ellenex legacy frame — 8 bytes, fPort 15, one layout for the entire product
@@ -27,8 +26,9 @@ import type { QuantityKind } from '../../core/units.js';
  *    labelled "pressure -1192 bar", which is physically impossible and shows
  *    what happens when you treat the count as a value.
  *
- *    So by default we emit the raw count with `unit: 'raw'` and a warning. Give
- *    the decoder a scaling profile and it will produce real units.
+ *    So by default we emit the raw count on `<key>_raw` with a warning, never
+ *    on the engineering key. Give the decoder a scaling profile and it produces
+ *    `level` in metres or `pressure` in kilopascals.
  */
 
 export const ELLENEX_FPORT = 15;
@@ -37,7 +37,7 @@ export type ScalingProfile = 'adc14' | 'microamp' | 'direct';
 
 export interface EllenexScaling {
   profile?: ScalingProfile;
-  /** Full-scale sensor range, in the unit you want out (metres, bar, …). */
+  /** Full-scale sensor range, in the output unit: metres for level, kPa for pressure. */
   range?: number;
   /** Liquid density relative to water; 1.0 water, ~0.85 diesel. */
   density?: number;
@@ -45,11 +45,19 @@ export interface EllenexScaling {
 
 const OBSERVED_HEADER_FIRST_BYTE = 0x01;
 
+export interface LegacyReading {
+  /** Engineering key once scaled, e.g. `level`. */
+  key: string;
+  unit: Unit;
+  /** Key for the unscaled count, e.g. `level_raw`. */
+  rawKey: string;
+}
+
 export interface LegacyOptions {
   /** What the primary reading measures on this model. */
-  primary: { key: string; kind: QuantityKind; unit: Unit };
+  primary: LegacyReading;
   /** Present only on the multi-sense models. */
-  secondary?: { key: string; kind: QuantityKind; unit: Unit };
+  secondary?: LegacyReading;
 }
 
 export function decodeLegacy(bytes: Uint8Array, ctx: DecodeContext, opts: LegacyOptions): DecodeResult {
@@ -67,7 +75,7 @@ export function decodeLegacy(bytes: Uint8Array, ctx: DecodeContext, opts: Legacy
   const battery = round(r.u8() * 0.1, 1);
 
   const attributes: Attributes = { header: toHex(header) };
-  const measurements: Measurement[] = [];
+  const readings: Reading[] = [];
 
   if (header[0] !== OBSERVED_HEADER_FIRST_BYTE) {
     // Quiet in the normal case, loud when the undocumented field changes —
@@ -83,32 +91,24 @@ export function decodeLegacy(bytes: Uint8Array, ctx: DecodeContext, opts: Legacy
     });
   }
 
-  measurements.push(scaleReading(primaryRaw, opts.primary, ctx));
+  readings.push(scaleReading(primaryRaw, opts.primary, ctx));
 
   if (opts.secondary) {
-    measurements.push({
-      key: opts.secondary.key,
-      kind: opts.secondary.kind,
-      unit: Unit.RAW,
-      value: secondaryRaw,
-    });
+    readings.push({ key: opts.secondary.rawKey, unit: Unit.RAW, value: secondaryRaw });
     ctx.warn({
       code: 'unscaled_value',
       message:
-        `${opts.secondary.key} is reported as a raw count; Ellenex documents no scaling factor for it.`,
+        `${opts.secondary.key} is reported as a raw count on ${opts.secondary.rawKey}; ` +
+        'Ellenex documents no scaling factor for it.',
     });
   }
 
-  measurements.push({ key: 'battery_voltage', kind: 'battery', unit: Unit.VOLT, value: battery });
+  readings.push({ key: 'battery_voltage', unit: Unit.VOLT, value: battery });
 
-  return { measurements, attributes };
+  return { readings, attributes };
 }
 
-function scaleReading(
-  raw: number,
-  spec: LegacyOptions['primary'],
-  ctx: DecodeContext,
-): Measurement {
+function scaleReading(raw: number, spec: LegacyReading, ctx: DecodeContext): Reading {
   const scaling = ctx.options.scaling as EllenexScaling | undefined;
   const profile = scaling?.profile;
 
@@ -116,11 +116,11 @@ function scaleReading(
     ctx.warn({
       code: 'unscaled_value',
       message:
-        `${spec.key} is a raw sensor count, not ${spec.unit}. Ellenex supplies the conversion per device ` +
-        'with the EUI. Pass options.scaling = { profile, range, density } to get engineering units — ' +
-        'see docs/vendor-quirks.md.',
+        `${spec.key} is a raw sensor count, reported on ${spec.rawKey}. Ellenex supplies the conversion ` +
+        'per device with the EUI. Pass scaling = { profile, range, density } to get ' +
+        `${spec.key} in ${spec.unit} — see docs/vendor-quirks.md.`,
     });
-    return { key: spec.key, kind: spec.kind, unit: Unit.RAW, value: raw };
+    return { key: spec.rawKey, unit: Unit.RAW, value: raw };
   }
 
   const range = scaling?.range;
@@ -145,14 +145,14 @@ function scaleReading(
       break;
   }
 
-  return { key: spec.key, kind: spec.kind, unit: spec.unit, value: round(value, 3) };
+  return { key: spec.key, unit: spec.unit, value: round(value, 3) };
 }
 
 function requireRange(range: number | undefined, profile: ScalingProfile): void {
   if (range === undefined) {
     throw new DecodeError(
       'unsupported_report',
-      `Ellenex scaling profile "${profile}" needs options.scaling.range (the sensor's full-scale range)`,
+      `Ellenex scaling profile "${profile}" needs scaling.range (the sensor's full-scale range)`,
       { profile },
     );
   }

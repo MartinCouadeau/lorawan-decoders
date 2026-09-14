@@ -1,27 +1,30 @@
 #!/usr/bin/env node
 import { DecodeError } from './core/errors.js';
+import { accessorName } from './core/registry.js';
 import { decode, registry } from './index.js';
 
 const USAGE = `lorawan-decode — decode a LoRaWAN payload from the command line
 
   lorawan-decode --vendor <name> --model <model> --hex <payload> [options]
+  lorawan-decode --vendor <name> --model <model> --base64 <payload> [options]
   lorawan-decode --list [vendor]
 
 Options:
   --vendor, -v     Vendor name (milesight, netvox, ellenex, dragino)
   --model,  -m     Model name; separators and case are ignored
   --hex,    -x     Payload as hex; spaces, colons and dashes allowed
+  --base64, -b     Payload as base64 (what ChirpStack and TTN deliver)
   --fport,  -p     fPort the uplink arrived on
   --strict         Treat warnings as errors
   --scaling        JSON object of vendor scaling options
-  --json           Machine-readable output
+  --json           Machine-readable output (the detailed shape)
   --list           List supported models and exit
   --help,   -h     This message
 
 Examples:
-  lorawan-decode -v milesight -m EM400-TLD -x "01755C03670101048244080500 01"
-  lorawan-decode -v netvox -m R718N17 -x 014901240E150100000000 -p 6
-  lorawan-decode -v ellenex -m PLS2-L -x 01E80000D6000022 \\
+  lorawan-decode -v milesight -m em400-tld -x "01755C03670101048244080500 01"
+  lorawan-decode -v netvox -m r718n17 -x 014901240E150100000000 -p 6
+  lorawan-decode -v ellenex -m pls2-l -x 01E80000D6000022 -p 15 \\
       --scaling '{"profile":"adc14","range":10}'
 `;
 
@@ -31,7 +34,7 @@ interface Args {
 
 function parseArgs(argv: string[]): Args {
   const alias: Record<string, string> = {
-    v: 'vendor', m: 'model', x: 'hex', p: 'fport', h: 'help',
+    v: 'vendor', m: 'model', x: 'hex', b: 'base64', p: 'fport', h: 'help',
   };
   const args: Args = {};
   for (let i = 0; i < argv.length; i++) {
@@ -51,21 +54,22 @@ function parseArgs(argv: string[]): Args {
 }
 
 function listModels(vendorFilter?: string): void {
-  const models = registry.list().filter(
+  const defs = registry.list().filter(
     (d) => !vendorFilter || d.vendor.toLowerCase() === vendorFilter.toLowerCase(),
   );
   let currentVendor = '';
-  for (const def of models) {
+  for (const def of defs) {
     if (def.vendor !== currentVendor) {
       currentVendor = def.vendor;
       process.stdout.write(`\n${currentVendor}\n`);
     }
     const aliasCount = def.aliases?.length ?? 0;
     const suffix = aliasCount > 0 ? `  (+${aliasCount} model variants)` : '';
-    process.stdout.write(`  ${def.model.padEnd(12)} ${def.description}${suffix}\n`);
+    const accessor = `${def.vendor.toLowerCase()}.${accessorName(def.model)}`;
+    process.stdout.write(`  ${def.model.padEnd(12)} ${accessor.padEnd(24)} ${def.description}${suffix}\n`);
   }
-  const vendorCount = new Set(models.map((d) => d.vendor)).size;
-  process.stdout.write(`\n${models.length} decoders, ${vendorCount} vendor${vendorCount === 1 ? '' : 's'}\n`);
+  const vendorCount = new Set(defs.map((d) => d.vendor)).size;
+  process.stdout.write(`\n${defs.length} decoders, ${vendorCount} vendor${vendorCount === 1 ? '' : 's'}\n`);
 }
 
 function main(): number {
@@ -84,9 +88,11 @@ function main(): number {
   const vendor = args['vendor'];
   const model = args['model'];
   const hex = args['hex'];
+  const base64 = args['base64'];
+  const payload = typeof base64 === 'string' ? base64 : hex;
 
-  if (typeof vendor !== 'string' || typeof model !== 'string' || typeof hex !== 'string') {
-    process.stderr.write('error: --vendor, --model and --hex are all required\n\n');
+  if (typeof vendor !== 'string' || typeof model !== 'string' || typeof payload !== 'string') {
+    process.stderr.write('error: --vendor, --model and --hex (or --base64) are all required\n\n');
     process.stdout.write(USAGE);
     return 2;
   }
@@ -102,8 +108,9 @@ function main(): number {
   }
 
   try {
-    const result = decode({
-      vendor, model, payload: hex,
+    const result = decode(vendor, model, payload, {
+      detailed: true,
+      ...(typeof base64 === 'string' ? { encoding: 'base64' as const } : {}),
       ...(typeof args['fport'] === 'string' ? { fPort: Number(args['fport']) } : {}),
       ...(args['strict'] ? { strict: true } : {}),
       ...(scaling ? { scaling } : {}),
@@ -114,12 +121,17 @@ function main(): number {
       return 0;
     }
 
-    process.stdout.write(`${result.vendor} ${result.model}   ${result.raw}\n\n`);
-    for (const m of result.measurements) {
-      const name = m.index === undefined ? m.key : `${m.key}[${m.index}]`;
-      const unit = m.unit && m.unit !== 'raw' ? ` ${m.unit}` : '';
-      const when = m.at ? `  @ ${m.at}` : '';
-      process.stdout.write(`  ${name.padEnd(26)} ${String(m.value)}${unit}${when}\n`);
+    process.stdout.write(`${vendor} ${model}\n\n`);
+    for (const [key, value] of Object.entries(result.telemetry)) {
+      const unit = result.units[key];
+      process.stdout.write(`  ${key.padEnd(26)} ${String(value)}${unit && unit !== 'raw' ? ` ${unit}` : ''}\n`);
+    }
+    for (const record of result.history) {
+      const { ts, ...values } = record;
+      process.stdout.write(`\n  history @ ${ts}\n`);
+      for (const [key, value] of Object.entries(values)) {
+        process.stdout.write(`    ${key.padEnd(24)} ${String(value)}\n`);
+      }
     }
     const attrs = Object.entries(result.attributes);
     if (attrs.length > 0) {
