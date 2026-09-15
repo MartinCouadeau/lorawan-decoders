@@ -19,8 +19,7 @@ milesight.em400_tld('01755C0367010104824408050001');
 // { battery: 92, temperature: 25.7, distance: 2116, position: 'tilt' }
 ```
 
-That is the whole output. The library decodes sensor data; everything else is
-yours.
+That is the whole output. The library just decodes sensor data.
 
 ## The problem
 
