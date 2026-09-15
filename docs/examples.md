@@ -1,26 +1,24 @@
 # Examples
 
-Every output below was produced by running the code against the published
-package. Payloads are vendor worked examples where the vendor publishes one.
+Outputs below were produced by running the code. Payloads are vendor
+examples where the vendor publishes one.
 
-## Decode one model you know
+## One model
 
 ```ts
 import { milesight } from 'lorawan-decoders';
 
-const t = milesight.em400_tld('01755C0367010104824408050001');
+milesight.em400_tld('01755C0367010104824408050001');
 ```
 
 ```json
 { "battery": 92, "temperature": 25.7, "distance": 2116, "position": "tilt" }
 ```
 
-`t.distance` is typed `number | undefined`; `t.humidity` does not compile.
-
-## A three-phase meter
+## Three-phase meter
 
 ```ts
-import { netvox } from 'lorawan-decoders/netvox';   // pulls Netvox only
+import { netvox } from 'lorawan-decoders/netvox';
 
 netvox.r718n3('014A0324006400640064 36', { fPort: 6 });
 ```
@@ -29,35 +27,24 @@ netvox.r718n3('014A0324006400640064 36', { fPort: 6 });
 { "battery_voltage": 3.6, "battery_low": false, "current_1": 1000, "current_2": 500, "current_3": 10000 }
 ```
 
-Any clamp rating is the same decoder: `netvox.r718n317`, `netvox.r718n3100e`.
+Any rating: `netvox.r718n317`, `netvox.r718n3100e`.
 
-## A sensor whose scale is configured per device
+## Per-device scaling (Ellenex)
 
 ```ts
 import { ellenex } from 'lorawan-decoders';
 
 ellenex.pls2_l('01E80000D6000022', { fPort: 15 });
-```
+// { level_raw: 214, battery_voltage: 3.4 }
 
-```json
-{ "level_raw": 214, "battery_voltage": 3.4 }
-```
-
-Ellenex ships the conversion with the device, not on the wire, so without it
-the count is reported as `level_raw` and `level` is absent. With it:
-
-```ts
 ellenex.pls2_l('01E80000D6000022', {
   fPort: 15,
   scaling: { profile: 'adc14', range: 10, density: 0.85 },   // 10 m sensor, diesel
 });
+// { level: -1.278, battery_voltage: 3.4 }
 ```
 
-```json
-{ "level": -1.278, "battery_voltage": 3.4 }
-```
-
-## An external probe
+## External probe (Dragino)
 
 ```ts
 import { dragino } from 'lorawan-decoders';
@@ -69,11 +56,10 @@ dragino.lht65('CBF60B0D02250109C47FFF');
 { "battery_voltage": 3.062, "battery_status": "good", "temperature": 28.29, "humidity": 54.9, "temperature_external": 25 }
 ```
 
-`temperature` is the built-in sensor, `temperature_external` the DS18B20.
-When the probe is configured but unplugged, `temperature_external` is absent
-and `detailed` shows a `sensor_fault` warning.
+Probe configured but unplugged: no `temperature_external`, `sensor_fault`
+warning in `detailed`.
 
-## Everything the decode produced
+## Detailed output
 
 ```ts
 milesight.em300_sld('01755C20ce00105e5f01016501', { detailed: true });
@@ -91,10 +77,8 @@ milesight.em300_sld('01755C20ce00105e5f01016501', { detailed: true });
 }
 ```
 
-The device was offline and replayed a buffered record. It arrives in `history`
-with the timestamp the device recorded, never in `telemetry`. Store it at
-`ts`, not at receive time, or six hours of backlog becomes a vertical line on
-the chart.
+Buffered records go to `history` with the device timestamp. Store them at
+`ts`, not at receive time.
 
 ## Partial decodes
 
@@ -109,10 +93,6 @@ milesight.ws303('017564aabb', { strict: true });
 // throws DecodeError
 ```
 
-The plain call returns what decoded and says nothing. Ask for `detailed` to
-see why something is missing; pass `strict` when a partial result is worse
-than none.
-
 ## Wrong model name
 
 ```ts
@@ -120,20 +100,13 @@ import { decode, isModel } from 'lorawan-decoders';
 
 decode('milesight', 'EM310-TLT', payload);
 // DecodeError: no decoder for milesight "EM310-TLT"; did you mean "EM310-TILT"?
-//   error.code === 'unknown_model'
-//   error.context.suggestion === 'EM310-TILT'
+//   error.code === 'unknown_model', error.context.suggestion === 'EM310-TILT'
 
 isModel('milesight', 'em310 tilt');   // true
 isModel('milesight', 'em310-tlt');    // false
 ```
 
-Spelling variants are not a problem, only different letters are:
-`EM310-TILT`, `EM310TILT`, `em310_tilt` and `Em310 Tilt` all resolve.
-
 ## ChirpStack v4 HTTP integration
-
-ChirpStack posts an uplink event with the payload in base64 and the device
-profile name as a string. Point an HTTP integration at this route:
 
 ```ts
 import express from 'express';
@@ -142,30 +115,19 @@ import { decode, isModel } from 'lorawan-decoders';
 const app = express().use(express.json());
 
 app.post('/uplink/chirpstack', (req, res) => {
-  const { deviceInfo, data, fPort } = req.body;   // ChirpStack UplinkEvent
-  const vendor = deviceInfo.tags?.vendor ?? 'milesight';
-  const model = deviceInfo.deviceProfileName;      // e.g. "EM300-SLD"
+  const { deviceInfo, data, fPort } = req.body;
+  const vendor = deviceInfo.tags?.vendor ?? 'milesight';   // device profile tag
+  const model = deviceInfo.deviceProfileName;               // "EM300-SLD"
 
   if (!isModel(vendor, model)) {
     return res.status(422).json({ error: `no decoder for ${vendor} ${model}` });
   }
 
-  const d = decode(vendor, model, data, { encoding: 'base64', fPort, detailed: true });
-  // d.telemetry  → live readings
-  // d.history    → buffered readings with their own timestamps
-  // d.warnings   → log these; they explain any missing key
-  res.json(d);
+  res.json(decode(vendor, model, data, { encoding: 'base64', fPort, detailed: true }));
 });
 ```
 
-A device profile tag named `vendor` keeps the vendor out of the model name.
-Without it, hardcode the vendor per route.
-
 ## Forwarding to ThingsBoard
-
-ThingsBoard's device HTTP API takes either a flat object or an array of
-timestamped points. The flat object is exactly `telemetry`; history maps onto
-the array form:
 
 ```ts
 import { decode } from 'lorawan-decoders';
@@ -192,22 +154,16 @@ async function forward(token: string, vendor: string, model: string, data: strin
 }
 ```
 
-Firmware version, serial number and the like go to attributes, where
-ThingsBoard expects device metadata, and never pollute the time series.
-
 ## The Things Stack webhook
-
-TTN delivers `uplink_message.frm_payload` in base64 and `f_port` as a number:
 
 ```ts
 app.post('/uplink/ttn', (req, res) => {
   const { end_device_ids, uplink_message } = req.body;
-  const model = end_device_ids.device_id.split('-')[0];   // your naming scheme
-  const t = decode('milesight', model, uplink_message.frm_payload, {
+  const model = end_device_ids.device_id.split('-')[0];
+  res.json(decode('milesight', model, uplink_message.frm_payload, {
     encoding: 'base64',
     fPort: uplink_message.f_port,
-  });
-  res.json(t);
+  }));
 });
 ```
 
@@ -230,25 +186,22 @@ client.on('message', (_topic, buf) => {
 });
 ```
 
-## Netvox frames that cannot carry all their scaling
+## Netvox multipliers
 
-A three-phase Netvox ReportType 0x01 frame holds phase 1's multiplier but not
-phases 2 and 3. Those arrive in a separate ReportType 0x02 frame:
+ReportType 0x01 carries multiplier 1 only; 2 and 3 arrive in ReportType 0x02.
 
 ```ts
 const d = netvox.r718n3('014A01240064006400640A', { detailed: true });
 d.telemetry;    // { ..., current_1: 1000, current_2: 100, current_3: 100 }
-d.warnings;     // two unscaled_value warnings naming current_2 and current_3
-```
+d.warnings;     // unscaled_value for current_2 and current_3
 
-Cache the multipliers from the 0x02 frame per device and pass them back:
-
-```ts
 netvox.r718n3('014A01240064006400640A', { scaling: { multiplier2: 5, multiplier3: 100 } });
-// { ..., current_1: 1000, current_2: 500, current_3: 10000 }      no warnings
+// { ..., current_1: 1000, current_2: 500, current_3: 10000 }
 ```
 
-## Batch-decoding a CSV of captures
+Cache the 0x02 values per device and pass them back.
+
+## Batch from CSV
 
 ```ts
 import { readFileSync } from 'node:fs';
@@ -264,28 +217,22 @@ for (const line of readFileSync('captures.csv', 'utf8').trim().split('\n').slice
 }
 ```
 
-## Building a device-profile picker
+## Device-profile picker
 
 ```ts
 import { models } from 'lorawan-decoders';
 
-for (const m of models('milesight')) {
-  console.log(m.name, '→', Object.keys(m.keys).join(', '));
-}
+for (const m of models('milesight')) console.log(m.name, '→', Object.keys(m.keys).join(', '));
 // AM103 → battery, temperature, humidity, light_level, co2
 // AM308L → battery, temperature, humidity, pir, light_level, co2, tvoc_index, tvoc, barometric_pressure, pm2_5, pm10, buzzer_status
-// …
 ```
 
-`m.keys` maps each key to its unit (`null` for states), so a UI can show what
-a model will produce before any uplink arrives.
-
-## From the command line
+## CLI
 
 ```bash
 npx lorawan-decode -v milesight -m em400-tld -x 01755C0367010104824408050001
-npx lorawan-decode -v milesight -m em400-tld -b AXVcA2cBAQSCRAgFAAE=          # base64
-npx lorawan-decode -v ellenex -m pls2-l -x 01E80000D6000022 -p 15 --json      # detailed shape
-npx lorawan-decode -v netvox -m r718n3 -x 014A01240064006400640A --strict     # exit 1 on warnings
+npx lorawan-decode -v milesight -m em400-tld -b AXVcA2cBAQSCRAgFAAE=
+npx lorawan-decode -v ellenex -m pls2-l -x 01E80000D6000022 -p 15 --json
+npx lorawan-decode -v netvox -m r718n3 -x 014A01240064006400640A --strict
 npx lorawan-decode --list ellenex
 ```

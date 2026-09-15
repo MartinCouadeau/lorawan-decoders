@@ -1,7 +1,4 @@
-/**
- * Regenerates docs/supported-devices.md from the registry, so the table can
- * never drift from the code. Run with `npm run devices`.
- */
+/** Writes docs/supported-devices.md from the registry. `npm run devices`. */
 import { writeFileSync } from 'node:fs';
 import { accessorName } from '../src/core/registry.js';
 import { registry } from '../src/index.js';
@@ -47,29 +44,17 @@ const content = `# Supported devices
 
 **${decoders} decoders covering ${totalVariants} model names across ${registry.vendors().length} vendors.**
 
-Two ways to reach a decoder:
+- Accessor: \`milesight.em310_tilt(payload)\`. Model name lowercased, separators → \`_\`. Aliases too.
+- Name string: \`decode('milesight', 'em310-tilt', payload)\`. Case and separators ignored.
+  \`isModel(vendor, name)\` validates; unknown names throw with a suggestion.
 
-- **Accessor**, typed: \`milesight.em310_tilt(payload)\`. The property name is the
-  model name lowercased with separators turned into \`_\`. Aliases are properties
-  too (\`milesight.em310tilt\`).
-- **Name string**, dynamic: \`decode('milesight', 'em310-tilt', payload)\`. Case and
-  separators are ignored, so \`EM310-TILT\`, \`EM310TILT\`, \`em310_tilt\` and
-  \`Em310 Tilt\` all resolve to the same decoder. That is not a nicety: in a real
-  fleet the same device arrives spelled three different ways from three
-  different integrations. Use \`isModel(vendor, name)\` to validate a profile name
-  up front; an unknown name throws with a did-you-mean suggestion.
-
-Every key below is in the shared vocabulary in [naming.md](naming.md), with the
-unit shown. Keys without a unit are states or events and carry a string.
+Keys are from [naming.md](naming.md). No unit = state or event (string).
 ${rows.join('\n')}
 
-## Why the counts differ
+## Decoders vs model names
 
-A Netvox R718N1 and an R718N1100 are the same device with a different current
-transformer — 30 A versus 1000 A. The wire format is identical; the reading is
-always milliamps and the range is handled by the device plus the multiplier
-byte. Writing 12 near-identical decoders for that family would be 12 places for
-a bug to hide. One decoder, generated aliases.
+Netvox CT-rating suffixes (R718N1, R718N17, R718N1100…) share one wire format,
+so one decoder serves the family and the names are aliases.
 `;
 
 writeFileSync(new URL('../docs/supported-devices.md', import.meta.url), content);

@@ -5,11 +5,7 @@ export type TelemetryValue = number | string | boolean;
 /** What a decode call returns: one flat object of sensor readings. */
 export type Telemetry = Record<string, TelemetryValue>;
 
-/**
- * One reading as produced inside a decoder, before flattening. Keys are final
- * vocabulary keys (see vocabulary.ts). `at` marks a buffered record replayed by
- * the device; those go to `history`, never to `telemetry`.
- */
+/** Internal reading before flattening. `key` is a vocabulary key. `at` set = buffered record → history. */
 export interface Reading {
   key: string;
   value: TelemetryValue;
@@ -39,17 +35,17 @@ export type WarningCode =
 export interface Warning {
   code: WarningCode;
   message: string;
-  /** Byte offset the warning refers to, when meaningful. */
+  /** Byte offset, when meaningful. */
   offset?: number;
   channel?: string;
 }
 
-/** Everything a decode produced. Returned when `detailed: true`. */
+/** Full decode result, returned with `detailed: true`. */
 export interface Detailed<T extends object = Telemetry> {
   telemetry: T;
-  /** Unit per telemetry key. States and events have none and are absent. */
+  /** Unit per numeric telemetry key. States/events absent. */
   units: Partial<Record<keyof T, Unit>>;
-  /** Buffered records replayed by the device, oldest first, one per timestamp. */
+  /** Buffered records, one per device timestamp, oldest first. */
   history: Array<{ ts: string } & Partial<T>>;
   attributes: Attributes;
   warnings: Warning[];
@@ -64,13 +60,9 @@ export interface Options {
   /** How to read a string payload. Default `'hex'`. */
   encoding?: Encoding;
   fPort?: number;
-  /**
-   * Strict mode turns recoverable problems into thrown errors. Off by default:
-   * in production you usually want the six good readings, not an exception
-   * that drops the whole uplink.
-   */
+  /** Throw on the first warning instead of returning a partial result. */
   strict?: boolean;
-  /** Vendor-specific configuration; see docs/vendor-quirks.md. */
+  /** Vendor-specific configuration; keys listed in docs/api.md. */
   scaling?: Record<string, number | string>;
   /** Return `Detailed` instead of the flat telemetry object. */
   detailed?: boolean;
@@ -79,23 +71,18 @@ export interface Options {
 /** Declared vocabulary of one model: every key it can emit, with its unit. */
 export type KeySpec<T extends object> = { [K in keyof T]-?: Unit | null };
 
-/**
- * A decoder for one model, or one family of models sharing a wire format.
- * `T` is the telemetry it emits; `A` is the union of every name it answers to
- * (canonical model name and aliases) as literal types, which is what makes the
- * vendor namespaces autocomplete.
- */
+/** One model, or a family sharing a wire format. `T` = telemetry type; `A` = model name and aliases as literals (drives namespace typing). */
 export interface ModelDefinition<T extends object = Telemetry, A extends string = string> {
   vendor: string;
   /** Canonical model name as the vendor prints it, e.g. `EM400-TLD`. */
   model: string;
-  /** Other spellings seen in the wild. Matched case- and separator-insensitively. */
+  /** Other names for the same decoder. Matched like `model`. */
   aliases?: readonly A[];
   /** Human description for the generated device table. */
   description: string;
   /** fPort the vendor documents for uplinks, when they document one. */
   fPort?: number;
-  /** Where the wire format came from. Printed in docs; keeps provenance honest. */
+  /** Documentation the format was implemented from. Printed in docs. */
   source: string;
   /** Every telemetry key this model can emit, with its unit. */
   keys: KeySpec<T>;
@@ -123,7 +110,7 @@ export interface ModelDecoder<T extends object = Telemetry> {
 /** What `models()` returns for each registered decoder. */
 export interface ModelInfo {
   vendor: string;
-  /** Canonical name, e.g. `EM310-TILT`. Pass it, or any spelling of it, to `decode`. */
+  /** Canonical name, e.g. `EM310-TILT`. Any spelling works in `decode`. */
   name: string;
   /** Property name on the vendor namespace, e.g. `em310_tilt`. */
   accessor: string;

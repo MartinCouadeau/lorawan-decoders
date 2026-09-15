@@ -4,15 +4,9 @@ import type { Attributes, DecodeContext, Reading } from '../../core/types.js';
 import { Unit } from '../../core/units.js';
 
 /**
- * Netvox uses one fixed 11-byte frame across their entire catalogue:
- *
- *   byte 0  Version  (0x01)
- *   byte 1  DeviceType
- *   byte 2  ReportType
- *   bytes 3..10  payload, zero-padded
- *
- * Uplinks are on fPort 6; fPort 7 is configuration, where byte 0 is a command
- * id rather than a version. This module handles fPort 6.
+ * Netvox frame, 11 bytes: [version=0x01][DeviceType][ReportType][8 payload
+ * bytes, zero-padded]. Uplinks on fPort 6; fPort 7 is configuration and not
+ * handled here.
  */
 export const NETVOX_FRAME_LENGTH = 11;
 export const NETVOX_UPLINK_FPORT = 6;
@@ -47,20 +41,14 @@ export function readFrame(bytes: Uint8Array, expectedDeviceType: number, ctx: De
     ctx.warn({
       code: 'vendor_quirk',
       offset: 1,
-      message:
-        `DeviceType 0x${deviceType.toString(16)} does not match 0x${expectedDeviceType.toString(16)} ` +
-        `expected for ${ctx.model}. The device profile is probably pointed at the wrong model.`,
+      message: `DeviceType 0x${deviceType.toString(16)} does not match 0x${expectedDeviceType.toString(16)} expected for ${ctx.model}`,
     });
   }
 
   return { version, deviceType, reportType, reader: r };
 }
 
-/**
- * Battery: low seven bits are tenths of a volt, bit 7 is the low-battery flag
- * (Netvox's threshold is 3.2 V). Reading the byte as a plain integer — an easy
- * mistake — gives you 17.8 V on a flagged 3.0 V cell.
- */
+/** Battery byte: bits 0-6 tenths of a volt, bit 7 low-battery flag. */
 export function readBattery(r: ByteReader): Reading[] {
   const raw = r.u8();
   const volts = round((raw & 0x7f) / 10, 1);
@@ -71,7 +59,7 @@ export function readBattery(r: ByteReader): Reading[] {
   ];
 }
 
-/** `current` for a single-phase meter, `current_<n>` per phase on three-phase ones. */
+/** `current` single-phase, `current_<n>` per phase. */
 export function currentKey(phase: number | undefined): string {
   return phase === undefined ? 'current' : `current_${phase}`;
 }
@@ -87,21 +75,15 @@ export function currentReading(
     ctx.warn({
       code: 'unscaled_value',
       message:
-        `${key} has no multiplier in this frame. Netvox splits the three-phase multipliers ` +
-        `across ReportType 0x01 and 0x02, so a single uplink cannot carry them all. The value is ` +
-        `the raw wire reading in mA; multiply it by the multiplier from the matching ReportType 0x02 frame, ` +
-        `or supply it via scaling.multiplier${phase}.`,
+        `${key} has no multiplier in this frame (Netvox sends it in ReportType 0x02); value is raw mA. ` +
+        `Pass scaling.multiplier${phase} to scale it.`,
     });
     return { key, unit: Unit.MILLIAMPERE, value: raw };
   }
   return { key, unit: Unit.MILLIAMPERE, value: raw * multiplier };
 }
 
-/**
- * ReportType 0x03 packs all three multipliers into one byte, two bits each,
- * through a lookup table — while ReportTypes 0x01 and 0x02 carry the multiplier
- * as a literal value in its own byte. Same field, same device, two encodings.
- */
+/** ReportType 0x03 packs three multipliers into one byte, 2 bits each, via this table. 0x01/0x02 carry literal bytes. */
 const PACKED_MULTIPLIERS: Record<number, number> = { 0: 1, 1: 5, 2: 10, 3: 100 };
 
 export function unpackMultipliers(b: number): [number, number, number] {
@@ -112,7 +94,7 @@ export function unpackMultipliers(b: number): [number, number, number] {
   ];
 }
 
-/** ReportType 0x00 is a version report and is identical across the catalogue. */
+/** ReportType 0x00: version report, same layout on every model. */
 export function readVersionReport(r: ByteReader): Attributes {
   const software = round(r.u8() / 10, 1);
   const hardware = r.u8();
@@ -126,7 +108,7 @@ export function readVersionReport(r: ByteReader): Attributes {
   };
 }
 
-/** `current_alarm` for single phase, `current_alarm_<n>` per phase otherwise. */
+/** Two bits per phase: low, high. */
 export function thresholdAlarms(flags: number, phases: number): Reading[] {
   const out: Reading[] = [];
   for (let i = 0; i < phases; i++) {

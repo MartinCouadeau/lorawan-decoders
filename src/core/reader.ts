@@ -1,14 +1,6 @@
 import { DecodeError } from './errors.js';
 
-/**
- * Bounds-checked cursor over a payload.
- *
- * Every read validates length first. The alternative — indexing straight into
- * the array — yields `undefined`, which silently becomes `NaN` two lines later
- * and reaches your dashboard as a blank tile with no explanation. A truncated
- * uplink is a real and frequent event on LoRaWAN; it should fail loudly at the
- * point of truncation.
- */
+/** Bounds-checked cursor over a payload. Every read checks length and throws `out_of_bounds` with the offset. */
 export class ByteReader {
   private readonly bytes: Uint8Array;
   private cursor = 0;
@@ -33,11 +25,7 @@ export class ByteReader {
     return this.remaining >= n;
   }
 
-  /**
-   * Move the cursor to an absolute offset. Validates the destination rather
-   * than the distance, so seeking backwards — to re-read a field under a
-   * different interpretation, for instance — works.
-   */
+  /** Move to an absolute offset. Backward seeks are allowed. */
   seek(offset: number): void {
     if (!Number.isInteger(offset) || offset < 0 || offset > this.bytes.length) {
       throw new DecodeError(
@@ -168,11 +156,7 @@ export function parseHex(input: string): Uint8Array {
 
 const BASE64 = /^[A-Za-z0-9+/]*={0,2}$/;
 
-/**
- * Base64 as ChirpStack and The Things Stack deliver it. Validated strictly:
- * `01AB` is valid hex *and* valid base64, so a lenient decoder would silently
- * produce plausible wrong bytes from a payload sent with the wrong encoding.
- */
+/** Strict base64: length multiple of 4, standard alphabet. `01AB` is valid hex and base64, so nothing is guessed. */
 export function parseBase64(input: string): Uint8Array {
   const cleaned = input.replace(/\s+/g, '');
   if (cleaned.length === 0) {
@@ -196,10 +180,7 @@ export function toHex(bytes: Uint8Array): string {
   return out;
 }
 
-/**
- * Round to a fixed number of decimals without the float dust that makes
- * `25.700000000000003` show up on a dashboard.
- */
+/** Round to `decimals` places without float artefacts (25.700000000000003 → 25.7). */
 export function round(value: number, decimals: number): number {
   const factor = 10 ** decimals;
   return Math.round((value + Number.EPSILON) * factor) / factor;

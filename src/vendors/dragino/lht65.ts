@@ -3,18 +3,13 @@ import type { Attributes, DecodeContext, DecodeResult, Reading } from '../../cor
 import { Unit } from '../../core/units.js';
 
 /**
- * Dragino LHT65 / LHT65N: fixed 11-byte frame, big-endian throughout.
- *
- *   bytes 0-1   battery: bits 15-14 status, bits 13-0 millivolts
- *   bytes 2-3   built-in SHT temperature, int16, 1/100 C
- *   bytes 4-5   built-in SHT humidity, uint16, 1/10 %
- *   byte 6      external sensor type; bit 7 set = probe configured but not
- *               connected (firmware 1.8 and later)
- *   bytes 7-10  external sensor data, layout depends on byte 6
- *
- * The external block is where the format forks. Type 0x01 (DS18B20 probe) is
- * the one Dragino ships in the box and the one verified by a worked example;
- * the others are implemented from the manual and not verified against hardware.
+ * Dragino LHT65 / LHT65N, 11 bytes, big-endian:
+ *   0-1   battery: bits 15-14 status, bits 13-0 mV
+ *   2-3   SHT temperature, int16, 0.01 °C
+ *   4-5   SHT humidity, uint16, 0.1 %
+ *   6     external sensor type; bit 7 = configured but disconnected
+ *   7-10  external data, layout per byte 6
+ * Only type 0x01 (DS18B20) is verified by a vendor example.
  */
 export const LHT65_FRAME_LENGTH = 11;
 
@@ -58,7 +53,7 @@ const EXT_NAMES: Record<number, string> = {
   0x08: 'counter32',
 };
 
-/** DS18B20 reports 0x7FFF when no probe is attached. */
+/** DS18B20 value when no probe is attached. */
 const PROBE_ABSENT = 0x7fff;
 
 export function decodeLht65(bytes: Uint8Array, ctx: DecodeContext): DecodeResult {
@@ -91,7 +86,7 @@ export function decodeLht65(bytes: Uint8Array, ctx: DecodeContext): DecodeResult
     ctx.warn({
       code: 'sensor_fault',
       offset: 6,
-      message: 'external sensor configured but reports not connected (bit 7 of byte 6 set)',
+      message: 'external sensor configured but not connected (byte 6 bit 7)',
     });
   }
 

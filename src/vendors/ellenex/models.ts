@@ -9,7 +9,7 @@ const SOURCE =
   'Apache-2.0 TTN Device Repository codecs, verified against their published test vectors. ' +
   'Implemented from the documented layout; no vendor code reused (their repo carries no licence).';
 
-/** Keys the V6 generation can emit on any model, since the map is self-describing. */
+/** V6 maps are self-describing, so every model may emit any V6 key. */
 const V6_TELEMETRY_KEYS: Record<string, Unit | null> = Object.fromEntries(
   Object.values(V6_KEYS).map((s) => [s.key, s.key === 'dry_contact' ? null : s.unit]),
 );
@@ -37,12 +37,7 @@ export interface EllenexTelemetry extends Telemetry {
   sensor_reading?: number;
 }
 
-/**
- * Ellenex ships two incompatible payload generations under the same model
- * names, and the device does not announce which one it is. We detect by shape:
- * a CBOR map header (0xBF, or 0xA0–0xB7) means Version 6; anything else of
- * 8 bytes is legacy. Callers who know can force it with `scaling.generation`.
- */
+/** Two payload generations per model. Detected by shape (CBOR map header = V6); `scaling.generation` overrides. */
 function ellenexModel<N extends string, A extends string>(
   name: N,
   alias: A,

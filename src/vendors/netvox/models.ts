@@ -11,15 +11,9 @@ const SOURCE =
   'TTN Device Repository per-device entries. Implemented from the documented byte layout.';
 
 /**
- * Netvox model names encode the CT clamp rating in the suffix — R718N17 is a
- * 75 A clamp, R718N1100 a 1000 A one — and an `E` suffix means detachable
- * cables. Neither changes the wire format: the value is always milliamps and
- * the range is handled by the device's own scaling plus the multiplier byte.
- *
- * So one decoder serves the whole family. Rather than typing out 46 aliases,
- * we generate them, which is also self-documenting about *why* they collapse.
- * The generic signature keeps the generated names as literal types so the
- * vendor namespace autocompletes `netvox.r718n17` like any other model.
+ * Model suffixes (CT rating digits, `E` detachable cables) do not change the
+ * wire format, so one decoder serves the family. Aliases are generated, typed
+ * as literals so the namespace autocompletes them.
  */
 function ctVariants<B extends string, R extends string, S extends string>(
   base: B,
@@ -94,9 +88,7 @@ function decodeN1(bytes: Uint8Array, ctx: DecodeContext): DecodeResult {
       const multiplier = r.u8() || 1;
       readings.push(currentReading(raw, multiplier, undefined, ctx));
       attributes['current_multiplier'] = multiplier;
-      // The threshold-alarm byte exists only on the newer R718N1xxx(E)
-      // firmware; older units document bytes 7..10 as reserved zeroes, which
-      // decodes as "normal" and is harmless.
+      // Alarm byte exists on newer firmware only; older units send 0 → "normal".
       readings.push(...thresholdAlarms(r.u8(), 1));
       break;
     }
@@ -207,13 +199,8 @@ function decodeNL3(bytes: Uint8Array, ctx: DecodeContext): DecodeResult {
 }
 
 /**
- * R718N360 — three-channel current *interface*. DeviceType 0xCA. The channel
- * values are raw counts whose scale depends on the attached transformer, so
- * they are `channel_1..3` with unit `raw`, never `current`.
- *
- * ReportType 0x02 has no battery byte: channels B and C consume all eight
- * payload bytes. Assuming a uniform "battery is always byte 3" would misread
- * the top half of channel B as a voltage.
+ * R718N360 — three-channel current interface, DeviceType 0xCA. Values are raw
+ * counts (`channel_1..3`, unit raw). ReportType 0x02 has no battery byte.
  */
 function decodeN360(bytes: Uint8Array, ctx: DecodeContext): DecodeResult {
   const { reportType, reader: r } = readFrame(bytes, 0xca, ctx);
