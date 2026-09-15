@@ -14,12 +14,7 @@ import type {
 } from './types.js';
 import { assertVocabulary } from './vocabulary.js';
 
-/**
- * Model keys are normalized before lookup: lowercased, with separators removed.
- * `EM400-TLD`, `em400tld`, `EM400_TLD` and `EM400 TLD` are the same device, and
- * in real fleets you will receive all four spellings from different
- * integrations.
- */
+/** Lookup key: lowercase, separators stripped. `EM400-TLD`, `em400tld`, `EM400_TLD` → same key. */
 export function normalizeModelKey(vendor: string, model: string): string {
   return `${simplify(vendor)}/${simplify(model)}`;
 }
@@ -35,8 +30,7 @@ export function accessorName(model: string): string {
   return model.toLowerCase().replace(SEPARATORS, '_').replace(/^_+|_+$/g, '');
 }
 
-// Any definition, whatever its telemetry type. The registry erases the
-// per-model type; the vendor namespaces keep it.
+// Type-erased definition; the registry does not keep per-model types.
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export type AnyModelDefinition = ModelDefinition<any, string>;
 
@@ -119,11 +113,7 @@ export class DecoderRegistry {
     return runDefinition(def, payload, options);
   }
 
-  /**
-   * Suggest the closest registered name for an error message. Restricted to the
-   * given vendor when that vendor exists, so a Milesight typo never suggests a
-   * Netvox model.
-   */
+  /** Closest registered name (edit distance ≤ 3), same vendor first. */
   private closest(vendor: string, model: string): string | undefined {
     const sameVendor = this.definitions.filter((d) => simplify(d.vendor) === simplify(vendor));
     const pool = sameVendor.length > 0 ? sameVendor : this.definitions;
@@ -139,7 +129,7 @@ export class DecoderRegistry {
   }
 }
 
-/** Decode with one definition. Shared by the registry and the vendor namespaces. */
+/** Decode with one definition. Used by the registry and the namespaces. */
 export function runDefinition(def: AnyModelDefinition, payload: Payload, options: Options): Telemetry | Detailed {
   const bytes = toBytes(payload, options.encoding);
   if (bytes.length === 0) {
@@ -178,7 +168,7 @@ export function accessor<T extends object>(def: ModelDefinition<T>): ModelDecode
 
 type SeparatorChar = '-' | '_' | ' ' | '.' | '(' | ')';
 
-/** Type-level twin of `accessorName`, so namespaces autocomplete. */
+/** Type-level `accessorName`. */
 export type Accessor<S extends string> = ReplaceSeparators<Lowercase<S>>;
 type ReplaceSeparators<S extends string> =
   S extends `${infer Head}${SeparatorChar}${infer Tail}` ? `${Head}_${ReplaceSeparators<Tail>}` : S;

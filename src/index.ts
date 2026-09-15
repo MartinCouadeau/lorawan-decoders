@@ -17,12 +17,7 @@ export type {
   LightThreePhaseTelemetry, CurrentInterfaceTelemetry,
 } from './vendors/netvox/index.js';
 
-/**
- * Typed vendor namespaces: `milesight.em310_tilt(payload)`. Property names are
- * the model names lowercased with separators replaced by `_`; aliases are
- * present too (`milesight.em310tilt`). Each accessor returns that model's
- * telemetry type.
- */
+/** Vendor namespaces: `milesight.em310_tilt(payload)`. Keys = model names and aliases, lowercased, separators → `_`. */
 export const milesight = namespace(MILESIGHT_MODELS);
 export const netvox = namespace(NETVOX_MODELS);
 export const ellenex = namespace(ELLENEX_MODELS);
@@ -37,12 +32,7 @@ export const registry = new DecoderRegistry()
 
 export type Vendor = 'Milesight' | 'Netvox' | 'Ellenex' | 'Dragino';
 
-/**
- * Decode by vendor and model name. Both are matched case-insensitively and
- * ignoring separators, so `EM310-TILT`, `EM310TILT`, `em310_tilt` and
- * `Em310 Tilt` all resolve to the same decoder. Unknown names throw
- * `DecodeError` with code `unknown_model` and a did-you-mean suggestion.
- */
+/** Decode by name. Vendor and model matched case- and separator-insensitively. Unknown → `unknown_model` with a suggestion. */
 export function decode(
   vendor: Vendor | (string & {}),
   model: string,
@@ -60,7 +50,7 @@ export function decode(vendor: string, model: string, payload: Payload, options?
   return registry.decode(vendor, model, payload, options);
 }
 
-/** True when `decode(vendor, name, …)` would find a decoder. Same normalization as `decode`. */
+/** True when `decode(vendor, name, …)` would find a decoder. */
 export function isModel(vendor: string, name: string): boolean {
   return registry.isModel(vendor, name);
 }

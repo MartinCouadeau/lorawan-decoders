@@ -4,13 +4,13 @@ import { Unit } from '../../core/units.js';
 import { enumState, numeric, struct, type ChannelMap, type ChannelSpec } from './tlv.js';
 import { isoFromUnix } from './attributes.js';
 
-/** Channels that mean the same thing on every model that has them. */
+/** Channels shared across models. */
 export const battery = () => numeric({ key: 'battery', type: 'u8', unit: Unit.PERCENT });
 
 export const temperatureC = () =>
   numeric({ key: 'temperature', type: 'i16le', unit: Unit.CELSIUS, divisor: 10, decimals: 1 });
 
-/** Milesight humidity is a half-percent step in one byte: raw/2. */
+/** One byte, 0.5 % steps. */
 export const humidityPct = () =>
   numeric({ key: 'humidity', type: 'u8', unit: Unit.PERCENT, divisor: 2, decimals: 1 });
 
@@ -51,18 +51,9 @@ export function alarmDistance() {
 }
 
 /**
- * EM500-UDL alarm channel.
- *
- * Milesight's published decoder divides distance by 10 here while decoding the
- * very same quantity raw in millimetres on channel 03/82 and in history
- * records — and their downlink threshold config takes raw millimetres. Their
- * README gives no unit for this channel and no worked example, so there is no
- * way to tell from the documentation whether the /10 is a real unit change or a
- * bug in their decoder.
- *
- * We follow their implementation (so values match what a ThingsBoard install
- * running the vendor codec would show), keep it on its own key so it can never
- * be confused with the live `distance`, and attach a warning.
+ * EM500-UDL alarm channel 83/e9. The vendor decoder divides distance by 10
+ * here but not on 03/82; the README gives no unit or example. We match the
+ * vendor, emit on `distance_alarm_value` (never `distance`), and warn.
  */
 export function udlDistanceAlarm() {
   const ALARM: Record<number, string> = {
@@ -75,11 +66,7 @@ export function udlDistanceAlarm() {
       const distance = round(r.u16le() / 10, 1);
       const mutation = round(r.u16le() / 10, 1);
       const code = r.u8();
-      emit.warn(
-        'vendor_quirk',
-        'EM500-UDL channel 83/e9 divides distance by 10 while channel 03/82 reports raw millimetres; ' +
-          'the vendor documents no unit here. Verify against hardware before trusting the magnitude.',
-      );
+      emit.warn('vendor_quirk', 'EM500-UDL 83/e9 divides distance by 10 while 03/82 does not; unit undocumented, verify against hardware');
       emit.reading({ key: 'distance_alarm_value', unit: Unit.MILLIMETRE, value: distance });
       emit.reading({ key: 'distance_mutation', unit: Unit.MILLIMETRE, value: mutation });
       emit.reading({ key: 'distance_alarm', value: ALARM[code] ?? `unknown(${code})` });
@@ -87,7 +74,7 @@ export function udlDistanceAlarm() {
   );
 }
 
-/** EM310-TILT: three signed angles at 1/100°, plus a per-axis threshold bitfield. */
+/** EM310-TILT: three int16 angles in 0.01°, then a per-axis threshold bitfield. */
 export function tiltAngles() {
   type T = {
     angle_x?: number; angle_y?: number; angle_z?: number;
@@ -113,15 +100,9 @@ export function tiltAngles() {
 }
 
 /**
- * WS302 sound levels.
- *
- * The first byte selects frequency and time weighting, and Milesight's decoder
- * renames its own output keys from it — `LAF`/`LAeq`/`LAFmax` under one setting,
- * `LZS`/`LZeq`/`LZSmax` under another. Dynamic keys are hostile to storage: your
- * time-series schema changes when someone reconfigures a device.
- *
- * We emit stable keys (`sound_level`, `sound_level_eq`, `sound_level_max`) and
- * put the weighting in attributes, where a configuration value belongs.
+ * WS302: weighting byte, then three uint16 levels in 0.1 dB. The vendor decoder
+ * derives key names from the weighting (LAF/LZS…); we use fixed keys and put
+ * the weighting in attributes.
  */
 export function soundLevels() {
   const FREQ: Record<number, string> = { 0: 'Z', 1: 'A', 2: 'C' };
@@ -142,11 +123,7 @@ export function soundLevels() {
   );
 }
 
-/**
- * History channels replay buffered readings; each record carries its own
- * timestamp. Readings emitted through `emit` get `at` stamped on them and land
- * in `history`, not `telemetry`.
- */
+/** Buffered record: uint32 unix timestamp, then fields. Readings get `at` and go to history. */
 export function history<T extends object>(
   length: number,
   keys: KeySpec<T>,

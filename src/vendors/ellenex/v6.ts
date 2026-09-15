@@ -5,17 +5,9 @@ import { Unit } from '../../core/units.js';
 import { decodeCbor } from './cbor.js';
 
 /**
- * Ellenex Version 6 payloads are a CBOR map with short text keys, so there are
- * no byte offsets to get wrong — but the key vocabulary is undocumented outside
- * their decoder sources, and it is case-sensitive in a way that will bite you:
- *
- *   `v` is battery voltage in millivolts.
- *   `V` is a raw voltage input channel, also in millivolts.
- *
- * One character apart, different meanings, both plausible on the same device.
- *
- * Wire units are converted to the library vocabulary: bar → kPa (×100),
- * metres → millimetres for `distance`, millivolts → volts.
+ * Ellenex V6: a CBOR map with short case-sensitive keys (`v` battery mV,
+ * `V` input voltage mV). Wire units are converted to the vocabulary: bar → kPa,
+ * `D` metres → mm, mV → V.
  */
 
 interface KeySpec {
@@ -71,7 +63,7 @@ export function decodeV6(bytes: Uint8Array, ctx: DecodeContext, opts: V6Options 
     if (!spec) {
       ctx.warn({
         code: 'unknown_channel',
-        message: `unknown Ellenex V6 key "${wireKey}" (value ${JSON.stringify(rawValue)}) was ignored`,
+        message: `unknown Ellenex V6 key "${wireKey}" (value ${JSON.stringify(rawValue)}) ignored`,
       });
       continue;
     }

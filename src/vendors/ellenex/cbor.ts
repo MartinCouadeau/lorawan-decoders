@@ -1,15 +1,9 @@
 import { DecodeError } from '../../core/errors.js';
 
 /**
- * Minimal CBOR reader (RFC 8949), enough for Ellenex Version 6 payloads.
- *
- * Supports what they actually emit: unsigned and negative integers, byte and
- * text strings, arrays, maps in both definite and indefinite form, the break
- * marker, booleans/null, and half-, single- and double-precision floats.
- *
- * Half-precision is the part people skip, and it is the part Ellenex uses most:
- * a 16-bit float costs three bytes on air including the header, which matters
- * at LoRaWAN payload sizes.
+ * Minimal CBOR reader (RFC 8949): integers, byte/text strings, arrays, maps
+ * (definite and indefinite), break, booleans/null, half/single/double floats.
+ * Ellenex mostly sends half floats.
  */
 
 export type CborValue =
@@ -126,9 +120,7 @@ class CborReader {
       if (key === BREAK) return false;
       const value = this.read();
       if (value === BREAK) throw new DecodeError('bad_hex', 'CBOR break where a map value was expected');
-      // Ellenex uses text-string keys throughout; integer keys are legal CBOR
-      // and cheap to accept. Anything else has no sensible object-key form, so
-      // reject it rather than stringifying it into "[object Object]".
+      // Text and integer keys only; other key types have no object-key form.
       if (typeof key !== 'string' && typeof key !== 'number') {
         throw new DecodeError('bad_hex', `CBOR map key is neither a text string nor an integer (${typeof key})`);
       }
@@ -178,7 +170,7 @@ export function decodeCbor(bytes: Uint8Array): CborValue {
   return value;
 }
 
-/** Ellenex V6 payloads are a CBOR map; definite maps start 0xA0–0xB7, indefinite 0xBF. */
+/** True for a CBOR map header: 0xA0–0xB7 definite, 0xBF indefinite. */
 export function looksLikeCbor(bytes: Uint8Array): boolean {
   const first = bytes[0];
   if (first === undefined) return false;

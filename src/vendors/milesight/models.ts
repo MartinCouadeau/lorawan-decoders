@@ -31,9 +31,7 @@ function model<M extends ChannelMap, N extends string, A extends string = never>
   };
 }
 
-// --- EM400 series: ToF / mmWave level, temperature ---------------------------
-// The TLD and MUD decode loops are identical; only the sensing technology
-// differs. One channel map, two registered models.
+// --- EM400 series: TLD (ToF) and MUD (mmWave) share one map ------------------
 const EM400 = {
   '01/75': battery(),
   '03/67': temperatureC(),
@@ -66,8 +64,7 @@ const WS302 = {
   '05/5b': soundLevels(),
 };
 
-// Note the collision with WS301: 03/00 is the magnet on WS301 and the leak
-// sensor here. Channel maps are per model precisely because of cases like this.
+// 03/00 is the magnet on WS301 and the leak sensor here.
 const WS303 = {
   '01/75': battery(),
   '03/00': enumState('leakage_status', { 0: 'normal', 1: 'leak' }),
@@ -127,8 +124,7 @@ const EM500_UDL = {
   }),
 };
 
-// Pressure here is signed and unscaled — raw kPa, no divisor. Confirmed against
-// the vendor's own worked example (037b0a00 -> 10 kPa).
+// Signed kPa, no divisor (vendor example 037b0a00 → 10 kPa).
 const EM500_PP = {
   '01/75': battery(),
   '03/7b': numeric({ key: 'pressure', type: 'i16le', unit: Unit.KILOPASCAL }),
@@ -142,9 +138,7 @@ const EM310_TILT = {
   '03/cf': tiltAngles(),
 };
 
-// --- AM308L ------------------------------------------------------------------
-// tVOC arrives on channel id 0x08 under two different type bytes with two
-// different units, so it gets two keys: `tvoc` (µg/m³) and `tvoc_index`.
+// --- AM308L: tVOC is `tvoc` (µg/m³) on 08/e6, `tvoc_index` on 08/7d ----------
 type Am308History = TempHumidity & {
   pir?: string; light_level?: number; co2?: number; barometric_pressure?: number;
   pm2_5?: number; pm10?: number;
@@ -189,9 +183,7 @@ const AM308L = {
   '21/ce': am308History('tvoc', 1, Unit.MICROGRAM_PER_M3),
 };
 
-// --- GS301 -------------------------------------------------------------------
-// Channel ids are shifted down by one relative to AM308L: temperature is 0x02,
-// humidity 0x03. H2S appears twice at two resolutions, same key, same unit.
+// --- GS301: ids shifted down one vs AM308L; h2s at two resolutions, one key --
 const GS301 = {
   '01/75': battery(),
   '02/67': temperatureC(),

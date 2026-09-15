@@ -1,21 +1,9 @@
 import { Unit } from './units.js';
 
 /**
- * The cross-vendor telemetry vocabulary. One key, one unit, forever.
- *
- * Every decoder in this library emits keys from this table with exactly this
- * unit. `null` marks a state or event whose value is a string or boolean and
- * which therefore has no unit. Adding a key to a decoder means adding a row
- * here first; the vocabulary test fails otherwise.
- *
- * Naming rules (docs/naming.md):
- *   1. snake_case, lowercase ASCII.
- *   2. Bare name = the device's primary/built-in sensor for that quantity.
- *      Extra sensors of the same quantity take a suffix: _external, _1 _2 _3,
- *      _x _y _z, _in _out, _eq _max.
- *   3. Same quantity in a different unit is a different key.
- *   4. Every key is in this table.
- *   5. States and events are strings; booleans only for two-valued flags.
+ * Key → unit for every telemetry key any decoder may emit. `null` = state or
+ * event (string/boolean, no unit). Registration and tests reject keys or units
+ * not in this table. Rules: docs/naming.md.
  */
 export const VOCABULARY: Record<string, Unit | null> = {
   // --- power -----------------------------------------------------------------
@@ -111,7 +99,7 @@ export const VOCABULARY: Record<string, Unit | null> = {
 
 export const KEY_PATTERN = /^[a-z][a-z0-9]*(_[a-z0-9]+)*$/;
 
-/** Throws at module load if a decoder declares a key outside the vocabulary. */
+/** Throws if `keys` has an entry missing from VOCABULARY or with a different unit. */
 export function assertVocabulary(model: string, keys: Record<string, Unit | null>): void {
   for (const [key, unit] of Object.entries(keys)) {
     if (!(key in VOCABULARY)) {

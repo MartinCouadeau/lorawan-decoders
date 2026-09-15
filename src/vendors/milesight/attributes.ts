@@ -8,16 +8,9 @@ const LORAWAN_CLASS: Record<number, string> = {
 const hex2 = (n: number): string => n.toString(16).padStart(2, '0');
 
 /**
- * The 0xFF channel namespace: versions, serial numbers, device status.
- *
- * Two deliberate departures from Milesight's published decoder, both
- * documented in docs/vendor-quirks.md:
- *
- *  - `ff/fe` (reset event) and `ff/0b` (device status) are hardcoded in the
- *    vendor decoder — `readResetEvent(1)` — so they always report "reset" and
- *    "on" no matter what the device sent. We read the actual byte.
- *  - Vendor READMEs say `ff/16` (serial number) is 2 bytes. It is 8; their own
- *    code slices 8. We use 8.
+ * 0xFF channels: versions, serial, status. Differs from the vendor decoder in
+ * two places (docs/vendor-quirks.md): ff/fe and ff/0b read the byte instead of
+ * a hardcoded 1; ff/16 is 8 bytes, not the 2 the README states.
  */
 export const COMMON_ATTRIBUTES: ChannelMap = {
   'ff/01': attribute(1, 'ipso_version', (r) => {
@@ -40,16 +33,12 @@ export const COMMON_ATTRIBUTES: ChannelMap = {
   'ff/0b': attribute(1, 'device_status', (r) => (r.u8() === 0 ? 'off' : 'on')),
 };
 
-/** WS101 and WS301 put the serial number on a 6-byte channel instead. */
+/** WS101 and WS301: 6-byte serial on ff/08. */
 export const SHORT_SERIAL: ChannelMap = {
   'ff/08': attribute(6, 'serial_number', (r) => r.hex(6)),
 };
 
-/**
- * VS132 formats versions differently from every other Milesight model: decimal
- * bytes joined with dots and no `v` prefix, so 0x84,0x01,0x00,0x01 is
- * "132.1.0.1". Its protocol version is a plain integer, not a nibble pair.
- */
+/** VS132: versions are decimal bytes joined by dots (84 01 00 01 → "132.1.0.1"); protocol version is a plain byte. */
 export const VS_ATTRIBUTES: ChannelMap = {
   'ff/01': attribute(1, 'protocol_version', (r) => r.u8()),
   'ff/16': attribute(8, 'serial_number', (r) => r.hex(8)),
@@ -63,7 +52,7 @@ function dottedVersion(r: ByteReader, n: number): string {
   return parts.join('.');
 }
 
-/** Unix seconds to ISO-8601, for the history channels. */
+/** Unix seconds → ISO-8601. */
 export function isoFromUnix(seconds: number): string {
   return new Date(seconds * 1000).toISOString();
 }

@@ -5,17 +5,10 @@ import type {
 import type { Unit } from '../../core/units.js';
 
 /**
- * Milesight's wire format is a stream of `[channel_id, channel_type, data…]`
- * triples with **no length field**. The width of `data` is implied by the
- * (id, type) pair, so a parser must carry the full table for the model: an
- * unknown pair means you no longer know where the next channel starts, and
- * resynchronising is impossible.
- *
- * Milesight's own decoders `break` out of the loop there and return whatever
- * they had, silently discarding the rest of the payload. We do the same — you
- * cannot do better without a length field — but we emit a warning saying which
- * pair stopped us and how many bytes were dropped, so the gap shows up in logs
- * instead of as a mysteriously absent reading.
+ * Milesight frames: repeated `[channel_id, channel_type, data…]`, no length
+ * field. Data width comes from the (id, type) table, so an unknown pair ends
+ * parsing (the next channel cannot be located). We stop like the vendor
+ * decoder does, but warn with the pair and the bytes dropped.
  */
 
 export interface ChannelEmit {
@@ -25,12 +18,7 @@ export interface ChannelEmit {
   channel: string;
 }
 
-/**
- * One channel: how many data bytes follow the header, which telemetry keys it
- * can emit (with units, for the vocabulary check and the docs), and how to
- * read it. The type parameter carries the keys so a model's telemetry type is
- * inferred from its channel map.
- */
+/** One channel: data length after the 2-byte header, keys it emits, reader. `T` carries the keys for type inference. */
 export interface ChannelSpec<T extends object = Telemetry> {
   /** Data bytes after the two header bytes. */
   length: number;
@@ -45,34 +33,15 @@ type UnionToIntersection<U> =
   (U extends unknown ? (k: U) => void : never) extends (k: infer I) => void ? I : never;
 type SpecTelemetry<S> = S extends ChannelSpec<infer T> ? T : never;
 
-/** The telemetry type of a whole channel map: every key any channel can emit. */
+/** Union of every key a channel map can emit. */
 export type TelemetryOf<M extends ChannelMap> =
   UnionToIntersection<SpecTelemetry<M[keyof M]>> extends infer R extends object ? R : never;
 
 /**
- * Builds the map key for a channel: `"03/67"` is channel id 0x03, channel type
- * 0x67. Two numbers because they are two separate bytes on the wire, and you
- * need both to identify a reading:
- *
- *   01 75 5C   03 67 01 01   04 82 44 08   05 00 01
- *   |  |  +- 92 %  |  |  +------ 25.7 C
- *   |  +----- type: what kind of quantity, and therefore how wide the
- *   |           data is and how it scales (0x67 is always int16 LE, tenths)
- *   +-------- id: which slot on the device
- *
- * Neither byte is sufficient alone:
- *
- *  - **id alone**: the same slot means different things on different models.
- *    `03/00` is the door magnet on a WS301 and the leak sensor on a WS303.
- *  - **type alone**: a device can report the same type on several slots. The
- *    AM308L puts PM2.5 on `0b/7d` and PM10 on `0c/7d`. And the reverse --
- *    `08/7d` is tVOC as an index while `08/e6` is tVOC in ug/m3, same slot,
- *    different unit.
- *
- * Two conventions worth knowing: an id with the high bit set is the alarm
- * variant of the same channel (`83/67` is `03/67` plus a trailing alarm byte),
- * and id `0xff` is a reserved namespace for device metadata rather than sensor
- * readings.
+ * Map key `"03/67"` = channel id 0x03, type 0x67. Both bytes are needed: the
+ * same id means different things per model (`03/00` = magnet on WS301, leak on
+ * WS303) and the same type appears on several ids. Id with bit 7 set is the
+ * alarm variant (`83/67` = `03/67` + alarm byte); id `0xff` is metadata.
  */
 export function channelKey(id: number, type: number): string {
   return `${id.toString(16).padStart(2, '0')}/${type.toString(16).padStart(2, '0')}`;
@@ -95,9 +64,7 @@ export function decodeTlv(bytes: Uint8Array, map: ChannelMap, ctx: DecodeContext
         code: 'unknown_channel',
         channel: key,
         offset: r.offset - 2,
-        message:
-          `unknown channel ${key} at offset ${r.offset - 2}; Milesight payloads carry no length ` +
-          `field, so the remaining ${dropped} byte(s) cannot be skipped and were dropped`,
+        message: `unknown channel ${key} at offset ${r.offset - 2}; no length field, so the remaining ${dropped} byte(s) cannot be skipped`,
       });
       break;
     }
@@ -127,8 +94,7 @@ export function decodeTlv(bytes: Uint8Array, map: ChannelMap, ctx: DecodeContext
 
     const before = r.offset;
     spec.read(r, emit);
-    // Defensive: a spec that reads the wrong number of bytes would desynchronise
-    // everything after it, and the symptom would appear on an unrelated channel.
+    // A spec consuming the wrong length would desync every later channel.
     const consumed = r.offset - before;
     if (consumed !== spec.length) {
       throw new Error(
@@ -148,17 +114,14 @@ export function decodeTlv(bytes: Uint8Array, map: ChannelMap, ctx: DecodeContext
   return { readings, attributes };
 }
 
-/** Every key any channel in the map can emit, for `ModelDefinition.keys`. */
+/** Merged `keys` of every channel in the map. */
 export function keysOf(map: ChannelMap): Record<string, Unit | null> {
   const out: Record<string, Unit | null> = {};
   for (const spec of Object.values(map)) Object.assign(out, spec.keys);
   return out;
 }
 
-// ---------------------------------------------------------------------------
-// Field builders. Model maps are written in terms of these, so adding a model
-// is a table entry rather than a new parsing loop.
-// ---------------------------------------------------------------------------
+// --- Channel builders ---------------------------------------------------------
 
 type IntType = 'u8' | 'i8' | 'u16le' | 'i16le' | 'u32le' | 'i32le';
 
@@ -184,7 +147,7 @@ export interface NumericOptions<K extends string> {
   /** Wire value is divided by this. */
   divisor?: number;
   decimals?: number;
-  /** Raw values that mean "no reading", mapped to a fault label on `<key>_status`. */
+  /** Raw values meaning "no reading" → label on `<key>_status`, plus a sensor_fault warning. */
   sentinels?: Record<number, string>;
 }
 
@@ -238,7 +201,7 @@ export function struct<T extends object>(
   return { length, keys, read };
 }
 
-/** Device metadata channel: emits an attribute, never telemetry. */
+/** Metadata channel: emits an attribute, no telemetry. */
 export function attribute(
   length: number,
   key: string,

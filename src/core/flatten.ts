@@ -2,13 +2,9 @@ import type { Attributes, Detailed, Reading, Telemetry, Warning } from './types.
 import type { Unit } from './units.js';
 
 /**
- * Turns a decoder's readings into the public shape.
- *
- * Live readings (no `at`) become `telemetry`; buffered readings are grouped by
- * their device timestamp into `history`, oldest first. A live key that appears
- * twice in one frame is a decoder or device problem worth hearing about, so
- * the last value wins and a `duplicate_key` warning is raised through `warn`
- * (which honours strict mode).
+ * Readings → Detailed. No `at` → telemetry; with `at` → history grouped by
+ * timestamp, oldest first. A repeated live key keeps the last value and warns
+ * `duplicate_key` through `warn` (so strict mode throws).
  */
 export function flatten(
   readings: Reading[],
