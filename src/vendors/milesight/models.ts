@@ -3,9 +3,9 @@ import type { KeySpec, ModelDefinition } from '../../core/types.js';
 import { Unit } from '../../core/units.js';
 import { COMMON_ATTRIBUTES, SHORT_SERIAL, VS_ATTRIBUTES } from './attributes.js';
 import {
-  GAS_SENTINELS, alarmDistance, alarmTemperature, battery, co2Ppm, distanceMm, enumState,
-  history, humidityPct, lightLevel, mergeChannels, numeric, soundLevels, struct, temperatureC,
-  tiltAngles, udlDistanceAlarm,
+  GAS_SENTINELS, alarmDistance, alarmTemperature, barometric, battery, co2Ppm, distanceMm, enumState,
+  history, humidityPct, illuminationTriple, lightLevel, mergeChannels, numeric, pir, soundLevels, struct,
+  temperatureAlarmChange, temperatureC, tiltAngles, udlDistanceAlarm,
 } from './channels.js';
 import { decodeTlv, keysOf, type ChannelMap, type TelemetryOf } from './tlv.js';
 
@@ -222,6 +222,179 @@ const VS132 = {
   ),
 };
 
+// --- EM500 series, more ------------------------------------------------------
+const EM500_CO2 = {
+  '01/75': battery(),
+  '03/67': temperatureC(),
+  '04/68': humidityPct(),
+  '05/7d': co2Ppm(),
+  '06/73': barometric(),
+  '83/d7': temperatureAlarmChange(),
+  '20/ce': history<TempHumidity & { co2?: number; barometric_pressure?: number }>(
+    11,
+    { ...TEMP_HUMIDITY_KEYS, co2: Unit.PPM, barometric_pressure: Unit.HECTOPASCAL },
+    (r, emit) => {
+      emit.reading({ key: 'co2', unit: Unit.PPM, value: r.u16le() });
+      emit.reading({ key: 'barometric_pressure', unit: Unit.HECTOPASCAL, value: round(r.u16le() / 10, 1) });
+      emit.reading({ key: 'temperature', unit: Unit.CELSIUS, value: round(r.i16le() / 10, 1) });
+      emit.reading({ key: 'humidity', unit: Unit.PERCENT, value: round(r.u8() / 2, 1) });
+    },
+  ),
+};
+
+// Depth on the wire is centimetres; the vocabulary `level` is metres.
+const EM500_SWL = {
+  '01/75': battery(),
+  '03/77': numeric({ key: 'level', type: 'u16le', unit: Unit.METRE, divisor: 100, decimals: 2 }),
+  '20/ce': history<{ level?: number }>(6, { level: Unit.METRE }, (r, emit) => {
+    emit.reading({ key: 'level', unit: Unit.METRE, value: round(r.u16le() / 100, 2) });
+  }),
+};
+
+const EM500_PT100 = {
+  '01/75': battery(),
+  '03/67': temperatureC(),
+  '83/d7': temperatureAlarmChange(),
+  '20/ce': history<{ temperature?: number }>(6, { temperature: Unit.CELSIUS }, (r, emit) => {
+    emit.reading({ key: 'temperature', unit: Unit.CELSIUS, value: round(r.i16le() / 10, 1) });
+  }),
+};
+
+const EM500_LGT = {
+  '01/75': battery(),
+  '03/94': numeric({ key: 'illuminance', type: 'u32le', unit: Unit.LUX }),
+  '20/ce': history<{ illuminance?: number }>(8, { illuminance: Unit.LUX }, (r, emit) => {
+    emit.reading({ key: 'illuminance', unit: Unit.LUX, value: r.u32le() });
+  }),
+};
+
+// Moisture: 1 byte /2 on 04/68, 2 bytes /100 on 04/ca and in history.
+const EM500_SMTC = {
+  '01/75': battery(),
+  '03/67': temperatureC(),
+  '04/68': numeric({ key: 'soil_moisture', type: 'u8', unit: Unit.PERCENT, divisor: 2, decimals: 1 }),
+  '04/ca': numeric({ key: 'soil_moisture', type: 'u16le', unit: Unit.PERCENT, divisor: 100, decimals: 2 }),
+  '05/7f': numeric({ key: 'conductivity', type: 'u16le', unit: Unit.MICROSIEMENS_PER_CM }),
+  '83/d7': temperatureAlarmChange(),
+  '20/ce': history<{ conductivity?: number; temperature?: number; soil_moisture?: number }>(
+    10,
+    { conductivity: Unit.MICROSIEMENS_PER_CM, temperature: Unit.CELSIUS, soil_moisture: Unit.PERCENT },
+    (r, emit) => {
+      emit.reading({ key: 'conductivity', unit: Unit.MICROSIEMENS_PER_CM, value: r.u16le() });
+      emit.reading({ key: 'temperature', unit: Unit.CELSIUS, value: round(r.i16le() / 10, 1) });
+      emit.reading({ key: 'soil_moisture', unit: Unit.PERCENT, value: round(r.u16le() / 100, 2) });
+    },
+  ),
+};
+
+const EM310_UDL = {
+  '01/75': battery(),
+  '03/82': distanceMm(),
+  '04/00': enumState('position', { 0: 'normal', 1: 'tilt' }),
+};
+
+const EM300_MCS = {
+  '01/75': battery(),
+  '03/67': temperatureC(),
+  '04/68': humidityPct(),
+  '06/00': enumState('magnet_status', { 0: 'close', 1: 'open' }),
+  '20/ce': history<TempHumidity & { magnet_status?: string }>(
+    8,
+    { ...TEMP_HUMIDITY_KEYS, magnet_status: null },
+    (r, emit) => {
+      emit.reading({ key: 'temperature', unit: Unit.CELSIUS, value: round(r.i16le() / 10, 1) });
+      emit.reading({ key: 'humidity', unit: Unit.PERCENT, value: round(r.u8() / 2, 1) });
+      emit.reading({ key: 'magnet_status', value: r.u8() === 1 ? 'open' : 'close' });
+    },
+  ),
+};
+
+// --- WS series, more ---------------------------------------------------------
+const WS202 = {
+  '01/75': battery(),
+  '03/00': pir(),
+  '04/00': enumState('daylight', { 0: 'dark', 1: 'light' }),
+};
+
+// Energy on the wire is watt-hours; the vocabulary `energy` is kWh.
+const WS523 = {
+  '03/74': numeric({ key: 'voltage', type: 'u16le', unit: Unit.VOLT, divisor: 10, decimals: 1 }),
+  '04/80': numeric({ key: 'active_power', type: 'u32le', unit: Unit.WATT }),
+  '05/81': numeric({ key: 'power_factor', type: 'u8', unit: Unit.PERCENT }),
+  '06/83': numeric({ key: 'energy', type: 'u32le', unit: Unit.KILOWATT_HOUR, divisor: 1000, decimals: 3 }),
+  '07/c9': numeric({ key: 'current', type: 'u16le', unit: Unit.MILLIAMPERE }),
+  '08/70': enumState('socket_status', { 0: 'off', 1: 'on' }),
+};
+
+// --- AM100 series ------------------------------------------------------------
+const AM104 = {
+  '01/75': battery(),
+  '03/67': temperatureC(),
+  '04/68': humidityPct(),
+  '05/6a': numeric({ key: 'activity', type: 'u16le', unit: Unit.INDEX }),
+  '06/65': illuminationTriple(),
+};
+
+// AM107 tVOC is ppb, not the AM308L µg/m³, so it gets its own key.
+const AM107 = {
+  ...AM104,
+  '07/7d': co2Ppm(),
+  '08/7d': numeric({ key: 'tvoc_ppb', type: 'u16le', unit: Unit.PPB }),
+  '09/73': barometric(),
+};
+
+// --- AM319: AM308L channels plus HCHO (0a/7d) or O3 (0d/7d) ------------------
+function am319History<K extends 'tvoc' | 'tvoc_index', X extends 'hcho' | 'o3'>(
+  tvocKey: K, tvocDivisor: number, tvocUnit: Unit, extraKey: X, extraUnit: Unit,
+) {
+  type T = Am308History & { [P in K]?: number } & { [P in X]?: number };
+  return history<T>(
+    22,
+    { ...AM308_HISTORY_KEYS, [tvocKey]: tvocUnit, [extraKey]: extraUnit } as KeySpec<T>,
+    (r, emit) => {
+      emit.reading({ key: 'temperature', unit: Unit.CELSIUS, value: round(r.i16le() / 10, 1) });
+      emit.reading({ key: 'humidity', unit: Unit.PERCENT, value: round(r.u16le() / 2, 1) });
+      emit.reading({ key: 'pir', value: r.u8() === 1 ? 'trigger' : 'idle' });
+      emit.reading({ key: 'light_level', unit: Unit.INDEX, value: r.u8() });
+      emit.reading({ key: 'co2', unit: Unit.PPM, value: r.u16le() });
+      emit.reading({ key: tvocKey, unit: tvocUnit, value: round(r.u16le() / tvocDivisor, 2) });
+      emit.reading({ key: 'barometric_pressure', unit: Unit.HECTOPASCAL, value: round(r.u16le() / 10, 1) });
+      emit.reading({ key: 'pm2_5', unit: Unit.MICROGRAM_PER_M3, value: r.u16le() });
+      emit.reading({ key: 'pm10', unit: Unit.MICROGRAM_PER_M3, value: r.u16le() });
+      emit.reading({ key: extraKey, unit: extraUnit, value: round(r.u16le() / 100, 2) });
+    },
+  );
+}
+
+const AM319_BASE = {
+  '01/75': battery(),
+  '03/67': temperatureC(),
+  '04/68': humidityPct(),
+  '05/00': pir(),
+  '06/cb': lightLevel(),
+  '07/7d': co2Ppm(),
+  '08/7d': numeric({ key: 'tvoc_index', type: 'u16le', unit: Unit.INDEX, divisor: 100, decimals: 2 }),
+  '08/e6': numeric({ key: 'tvoc', type: 'u16le', unit: Unit.MICROGRAM_PER_M3 }),
+  '09/73': barometric(),
+  '0b/7d': numeric({ key: 'pm2_5', type: 'u16le', unit: Unit.MICROGRAM_PER_M3 }),
+  '0c/7d': numeric({ key: 'pm10', type: 'u16le', unit: Unit.MICROGRAM_PER_M3 }),
+  '0e/01': enumState('buzzer_status', { 0: 'off', 1: 'on' }),
+};
+
+const AM319_HCHO = {
+  ...AM319_BASE,
+  '0a/7d': numeric({ key: 'hcho', type: 'u16le', unit: Unit.MILLIGRAM_PER_M3, divisor: 100, decimals: 2 }),
+  '20/ce': am319History('tvoc_index', 100, Unit.INDEX, 'hcho', Unit.MILLIGRAM_PER_M3),
+  '21/ce': am319History('tvoc', 1, Unit.MICROGRAM_PER_M3, 'hcho', Unit.MILLIGRAM_PER_M3),
+};
+
+const AM319_O3 = {
+  ...AM319_BASE,
+  '0d/7d': numeric({ key: 'o3', type: 'u16le', unit: Unit.PPM, divisor: 100, decimals: 2 }),
+  '20/ce': am319History('tvoc_index', 100, Unit.INDEX, 'o3', Unit.PPM),
+  '21/ce': am319History('tvoc', 1, Unit.MICROGRAM_PER_M3, 'o3', Unit.PPM),
+};
+
 export const MILESIGHT_MODELS = [
   model('EM400-TLD', 'ToF laser distance/level sensor with temperature', EM400, { aliases: ['EM400TLD'] }),
   model('EM400-MUD', 'mmWave distance/level sensor with temperature', EM400, { aliases: ['EM400MUD'] }),
@@ -230,13 +403,27 @@ export const MILESIGHT_MODELS = [
   model('EM310-TILT', 'Three-axis tilt sensor with per-axis thresholds', EM310_TILT, { aliases: ['EM310TILT'] }),
   model('EM500-UDL', 'Ultrasonic distance/level sensor', EM500_UDL, { aliases: ['EM500UDL'] }),
   model('EM500-PP', 'Pipe pressure sensor', EM500_PP, { aliases: ['EM500PP'] }),
+  model('EM500-CO2', 'CO2, temperature, humidity and barometric pressure sensor', EM500_CO2, { aliases: ['EM500CO2'] }),
+  model('EM500-SWL', 'Submersible water level sensor', EM500_SWL, { aliases: ['EM500SWL'] }),
+  model('EM500-PT100', 'PT100 industrial temperature sensor', EM500_PT100, { aliases: ['EM500PT100'] }),
+  model('EM500-LGT', 'Light sensor', EM500_LGT, { aliases: ['EM500LGT'] }),
+  model('EM500-SMTC', 'Soil moisture, temperature and conductivity sensor', EM500_SMTC, { aliases: ['EM500SMTC'] }),
+  model('EM310-UDL', 'Ultrasonic distance/level sensor with tilt', EM310_UDL, { aliases: ['EM310UDL'] }),
+  model('EM320-TH', 'Temperature and humidity sensor (EM320 series)', EM300_TH, { aliases: ['EM320TH'] }),
+  model('EM300-MCS', 'Temperature, humidity and magnetic contact sensor', EM300_MCS, { aliases: ['EM300MCS'] }),
   model('WS101', 'Smart button', WS101, { attributes: { ...COMMON_ATTRIBUTES, ...SHORT_SERIAL } }),
   model('WS201', 'Smart fill-level sensor', WS201),
+  model('WS202', 'PIR and light sensor', WS202, { attributes: { ...COMMON_ATTRIBUTES, ...SHORT_SERIAL } }),
   model('WS301', 'Magnetic contact / door sensor', WS301, { attributes: { ...COMMON_ATTRIBUTES, ...SHORT_SERIAL } }),
   model('WS302', 'Sound level sensor', WS302),
   model('WS303', 'Spot water-leak sensor', WS303),
+  model('WS523', 'Smart portable socket (WS523/WS525)', WS523, { aliases: ['WS525'] }),
   model('AM103', 'Temperature, humidity and CO2 sensor (AM103L adds light level)', AM103, { aliases: ['AM103L'] }),
+  model('AM104', 'Ambience sensor (temperature, humidity, activity, light)', AM104, { attributes: { ...COMMON_ATTRIBUTES, ...SHORT_SERIAL } }),
+  model('AM107', 'Ambience sensor (AM104 plus CO2, tVOC, barometric pressure)', AM107, { attributes: { ...COMMON_ATTRIBUTES, ...SHORT_SERIAL } }),
   model('AM308L', 'Indoor air quality sensor (CO2, tVOC, PM, PIR)', AM308L),
+  model('AM319-HCHO', 'Indoor air quality sensor with formaldehyde', AM319_HCHO, { aliases: ['AM319', 'AM319HCHO'] }),
+  model('AM319-O3', 'Indoor air quality sensor with ozone', AM319_O3, { aliases: ['AM319O3'] }),
   model('GS301', 'Odour/gas sensor (NH3, H2S)', GS301),
   model('VS132', '3D ToF people counter', VS132, { aliases: ['VS132-P'], attributes: VS_ATTRIBUTES }),
 ] as const;

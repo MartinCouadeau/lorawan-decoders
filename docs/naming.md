@@ -26,7 +26,10 @@ telemetry; it is in `attributes` with `detailed: true`.
 
 | Key | Unit | Emitted by |
 |---|---|---|
+| `active_power` | W | Milesight |
+| `activity` | index | Milesight |
 | `adc_raw` | raw | Ellenex |
+| `alarm` | — (state/event) | Dragino |
 | `angle_threshold_x` | — (state/event) | Milesight |
 | `angle_threshold_y` | — (state/event) | Milesight |
 | `angle_threshold_z` | — (state/event) | Milesight |
@@ -45,7 +48,8 @@ telemetry; it is in `attributes` with `detailed: true`.
 | `channel_2` | raw | Netvox |
 | `channel_3` | raw | Netvox |
 | `co2` | ppm | Milesight |
-| `current` | mA | Ellenex, Netvox |
+| `conductivity` | µS/cm | Dragino, Milesight |
+| `current` | mA | Ellenex, Milesight, Netvox |
 | `current_1` | mA | Ellenex, Netvox |
 | `current_2` | mA | Ellenex, Netvox |
 | `current_3` | mA | Ellenex, Netvox |
@@ -54,47 +58,62 @@ telemetry; it is in `attributes` with `detailed: true`.
 | `current_alarm_1` | — (state/event) | Netvox |
 | `current_alarm_2` | — (state/event) | Netvox |
 | `current_alarm_3` | — (state/event) | Netvox |
+| `daylight` | — (state/event) | Milesight |
 | `differential_pressure` | kPa | Ellenex |
 | `differential_pressure_raw` | raw | Ellenex |
-| `distance` | mm | Ellenex, Milesight |
+| `distance` | mm | Dragino, Ellenex, Milesight |
 | `distance_alarm` | — (state/event) | Milesight |
 | `distance_alarm_value` | mm | Milesight |
 | `distance_mutation` | mm | Milesight |
 | `dry_contact` | — (state/event) | Ellenex |
+| `energy` | kWh | Milesight |
 | `h2s` | ppm | Milesight |
 | `h2s_status` | — (state/event) | Milesight |
+| `hcho` | mg/m³ | Milesight |
 | `humidity` | % | Dragino, Milesight |
-| `illuminance` | lx | Dragino, Netvox |
+| `illuminance` | lx | Dragino, Milesight, Netvox |
+| `illuminance_ir` | lx | Milesight |
+| `illuminance_ir_visible` | lx | Milesight |
 | `input_level` | — (state/event) | Dragino |
 | `input_voltage` | V | Dragino, Ellenex |
 | `interrupt` | — (state/event) | Dragino |
-| `leakage_status` | — (state/event) | Milesight |
-| `level` | m | Ellenex |
+| `leakage_status` | — (state/event) | Dragino, Milesight |
+| `level` | m | Ellenex, Milesight |
 | `level_raw` | raw | Ellenex |
 | `light_level` | index | Milesight |
-| `magnet_status` | — (state/event) | Milesight |
+| `magnet_status` | — (state/event) | Dragino, Milesight |
 | `nh3` | ppm | Milesight |
 | `nh3_status` | — (state/event) | Milesight |
+| `o3` | ppm | Milesight |
+| `open_count` | count | Dragino |
+| `open_duration` | min | Dragino |
 | `periodic_counter_in` | count | Milesight |
 | `periodic_counter_out` | count | Milesight |
 | `pir` | — (state/event) | Milesight |
 | `pm10` | µg/m³ | Milesight |
 | `pm2_5` | µg/m³ | Milesight |
 | `position` | — (state/event) | Milesight |
+| `power_factor` | % | Milesight |
 | `pressure` | kPa | Ellenex, Milesight |
 | `pressure_raw` | raw | Ellenex |
 | `pulse_count` | count | Dragino, Ellenex |
 | `remaining` | % | Milesight |
 | `sensor_reading` | raw | Ellenex |
+| `socket_status` | — (state/event) | Milesight |
+| `soil_moisture` | % | Dragino, Milesight |
+| `soil_temperature` | °C | Dragino |
 | `sound_level` | dB | Milesight |
 | `sound_level_eq` | dB | Milesight |
 | `sound_level_max` | dB | Milesight |
 | `tamper_status` | — (state/event) | Milesight |
 | `temperature` | °C | Dragino, Ellenex, Milesight |
 | `temperature_alarm` | — (state/event) | Milesight |
+| `temperature_change` | °C | Milesight |
 | `temperature_external` | °C | Dragino |
 | `temperature_raw` | raw | Ellenex |
 | `total_counter_in` | count | Milesight |
 | `total_counter_out` | count | Milesight |
 | `tvoc` | µg/m³ | Milesight |
 | `tvoc_index` | index | Milesight |
+| `tvoc_ppb` | ppb | Milesight |
+| `voltage` | V | Milesight |

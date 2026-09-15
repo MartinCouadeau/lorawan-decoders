@@ -16,16 +16,27 @@ export const VOCABULARY: Record<string, Unit | null> = {
   temperature: Unit.CELSIUS,
   temperature_external: Unit.CELSIUS,
   temperature_raw: Unit.RAW,
+  temperature_change: Unit.CELSIUS,
   temperature_alarm: null,
   humidity: Unit.PERCENT,
+  soil_moisture: Unit.PERCENT,
+  soil_temperature: Unit.CELSIUS,
+  conductivity: Unit.MICROSIEMENS_PER_CM,
   barometric_pressure: Unit.HECTOPASCAL,
   illuminance: Unit.LUX,
+  illuminance_ir: Unit.LUX,
+  illuminance_ir_visible: Unit.LUX,
   light_level: Unit.INDEX,
+  daylight: null,
+  activity: Unit.INDEX,
 
   // --- air quality -----------------------------------------------------------
   co2: Unit.PPM,
   tvoc: Unit.MICROGRAM_PER_M3,
   tvoc_index: Unit.INDEX,
+  tvoc_ppb: Unit.PPB,
+  hcho: Unit.MILLIGRAM_PER_M3,
+  o3: Unit.PPM,
   pm2_5: Unit.MICROGRAM_PER_M3,
   pm10: Unit.MICROGRAM_PER_M3,
   nh3: Unit.PPM,
@@ -62,6 +73,11 @@ export const VOCABULARY: Record<string, Unit | null> = {
   channel_3: Unit.RAW,
   input_voltage: Unit.VOLT,
   input_level: null,
+  voltage: Unit.VOLT,
+  active_power: Unit.WATT,
+  power_factor: Unit.PERCENT,
+  energy: Unit.KILOWATT_HOUR,
+  socket_status: null,
   adc_raw: Unit.RAW,
   sensor_reading: Unit.RAW,
 
@@ -82,6 +98,8 @@ export const VOCABULARY: Record<string, Unit | null> = {
 
   // --- counters --------------------------------------------------------------
   pulse_count: Unit.COUNT,
+  open_count: Unit.COUNT,
+  open_duration: Unit.MINUTE,
   total_counter_in: Unit.COUNT,
   total_counter_out: Unit.COUNT,
   periodic_counter_in: Unit.COUNT,
@@ -95,6 +113,7 @@ export const VOCABULARY: Record<string, Unit | null> = {
   button_event: null,
   dry_contact: null,
   interrupt: null,
+  alarm: null,
 };
 
 export const KEY_PATTERN = /^[a-z][a-z0-9]*(_[a-z0-9]+)*$/;

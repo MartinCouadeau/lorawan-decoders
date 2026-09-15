@@ -44,6 +44,25 @@ emitted.
 
 **AM308L humidity** is 1 byte live, 2 bytes in history records. Same ÷2.
 
+**EM500-SWL depth** is centimetres on the wire; emitted as `level` in metres.
+
+**EM500-SMTC moisture** is 1 byte ÷2 on `04/68`, 2 bytes ÷100 on `04/ca` and
+in history. Same key `soil_moisture`.
+
+**AM107 tVOC** is ppb; AM308L/AM319 tVOC is µg/m³ or an index. Three keys:
+`tvoc_ppb`, `tvoc`, `tvoc_index`.
+
+**AM104/AM107 illumination** channel `06/65` carries three uint16 values:
+`illuminance`, `illuminance_ir_visible`, `illuminance_ir`.
+
+**AM319** ships as HCHO or O3 variants with different history layouts, so they
+are two models: `AM319-HCHO` (alias `AM319`) and `AM319-O3`.
+
+**WS523/WS525 energy** is watt-hours on the wire; emitted as `energy` in kWh.
+
+**PIR labels.** WS202 README says `normal`/`trigger`; this library uses
+`idle`/`trigger` on every model.
+
 ## Netvox
 
 **Battery byte.** Bits 0–6 tenths of a volt, bit 7 low-battery flag.
@@ -105,6 +124,29 @@ pass `range` in that unit. V6 conversions: bar → kPa, Pa → kPa (PDT2-L),
 
 **Unverified.** Only `0x01` has a vendor example. `LHT65N` is an alias of
 `LHT65`; same documented frame.
+
+**LDS02 / LWL02.** Bytes 0–1: bit 15 door open (LDS02), bit 14 leak (LWL02),
+bits 13–0 mV. Byte 2 MOD (1 door, 2 leak) → `attributes.mode`. Counts and
+durations are uint24; duration in minutes → `open_count`, `open_duration` on
+both models. Byte 9 bit 0 → `alarm`.
+
+**LDDS75 distance sentinels.** `0x0000` = no ultrasonic sensor, `0x0014` =
+object closer than 280 mm. Both warn `sensor_fault`; `distance` is absent.
+Frames before firmware 1.1.4 are 4 bytes. Byte 7 → `attributes.ultrasonic_sensor`.
+
+**LSE01 bytes 2–3.** The manual marks the DS18B20 field "reserve, ignore now";
+exposed as `attributes.reserved`. The manual's negative-temperature example
+subtracts 0xFFFF; this library uses two's complement (0xFF7E → −1.30, not
+−1.29).
+
+**LSN50v2 modes.** Byte 6 bits 2–6 hold MOD−1 (TTN Device Repository decoder
+convention). Only MOD=1 is decoded; other modes emit battery only with an
+`undocumented_field` warning. Bit 0 → `interrupt`, bit 1 (PA12) →
+`input_level`, bit 7 (PB14) → `attributes.interrupt_pin`. SHT and DS18B20
+`0x7FFF` = absent.
+
+**LHT52** sends its sample time in bytes 7–10 → `attributes.device_time`.
+fPort 3 datalog records share the layout.
 
 ## Hardware verification
 

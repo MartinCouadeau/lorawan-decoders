@@ -20,6 +20,41 @@ export const co2Ppm = () => numeric({ key: 'co2', type: 'u16le', unit: Unit.PPM 
 
 export const lightLevel = () => numeric({ key: 'light_level', type: 'u8', unit: Unit.INDEX });
 
+export const barometric = () =>
+  numeric({ key: 'barometric_pressure', type: 'u16le', unit: Unit.HECTOPASCAL, divisor: 10, decimals: 1 });
+
+export const pir = () => enumState('pir', { 0: 'idle', 1: 'trigger' });
+
+/** 83/d7 on the EM500 series: temperature, change since last report, alarm byte. */
+export function temperatureAlarmChange() {
+  const ALARM: Record<number, string> = {
+    0: 'threshold_alarm_release', 1: 'threshold_alarm', 2: 'mutation_alarm',
+  };
+  return struct<{ temperature?: number; temperature_change?: number; temperature_alarm?: string }>(
+    5,
+    { temperature: Unit.CELSIUS, temperature_change: Unit.CELSIUS, temperature_alarm: null },
+    (r, emit) => {
+      emit.reading({ key: 'temperature', unit: Unit.CELSIUS, value: round(r.i16le() / 10, 1) });
+      emit.reading({ key: 'temperature_change', unit: Unit.CELSIUS, value: round(r.i16le() / 10, 1) });
+      const code = r.u8();
+      emit.reading({ key: 'temperature_alarm', value: ALARM[code] ?? `unknown(${code})` });
+    },
+  );
+}
+
+/** AM104/AM107 06/65: visible, infrared+visible, infrared, uint16 lux each. */
+export function illuminationTriple() {
+  return struct<{ illuminance?: number; illuminance_ir_visible?: number; illuminance_ir?: number }>(
+    6,
+    { illuminance: Unit.LUX, illuminance_ir_visible: Unit.LUX, illuminance_ir: Unit.LUX },
+    (r, emit) => {
+      emit.reading({ key: 'illuminance', unit: Unit.LUX, value: r.u16le() });
+      emit.reading({ key: 'illuminance_ir_visible', unit: Unit.LUX, value: r.u16le() });
+      emit.reading({ key: 'illuminance_ir', unit: Unit.LUX, value: r.u16le() });
+    },
+  );
+}
+
 const THRESHOLD_ALARM: Record<number, string> = {
   0: 'threshold_alarm_release',
   1: 'threshold_alarm',

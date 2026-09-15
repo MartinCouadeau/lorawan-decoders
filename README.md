@@ -7,7 +7,7 @@ for every vendor. Milesight, Netvox, Ellenex, Dragino.
 ![TypeScript](https://img.shields.io/badge/TypeScript-strict-blue)
 ![License](https://img.shields.io/badge/license-MIT-green)
 
-34 decoders, 136 model names, 4 vendors. Written from public vendor
+54 decoders, 170 model names, 4 vendors. Written from public vendor
 documentation; no vendor code copied. See [Provenance](#provenance-and-licensing).
 
 ```ts

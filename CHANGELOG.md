@@ -1,5 +1,27 @@
 # Changelog
 
+## 0.3.0
+
+### Added
+
+- Milesight: EM500-CO2, EM500-SWL, EM500-PT100, EM500-LGT, EM500-SMTC,
+  EM310-UDL, EM320-TH, EM300-MCS, WS202, WS523 (alias WS525), AM104, AM107,
+  AM319-HCHO (alias AM319), AM319-O3. `83/d7` temperature alarm with
+  `temperature_change` on the EM500 series.
+- Dragino: LDS02, LWL02, LDDS75, LSE01, LHT52, LSN50v2 (MOD=1; other modes
+  warn and decode only the battery).
+- Vocabulary: `temperature_change`, `soil_moisture`, `soil_temperature`,
+  `conductivity` (µS/cm), `daylight`, `activity`, `illuminance_ir`,
+  `illuminance_ir_visible`, `tvoc_ppb`, `hcho` (mg/m³), `o3` (ppm),
+  `voltage`, `active_power` (W), `power_factor`, `energy` (kWh),
+  `socket_status`, `open_count`, `open_duration` (min), `alarm`.
+- Units: ppb, mg/m³, µS/cm, W, kWh, min.
+
+### Changed
+
+- Milesight `pir` labels are `idle`/`trigger` on every model (WS202 README
+  says `normal`/`trigger`).
+
 ## 0.2.0
 
 Breaking. The output shape changed; nothing from 0.1 was published to npm.
