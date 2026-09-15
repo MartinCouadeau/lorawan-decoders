@@ -1,6 +1,6 @@
 import { ByteReader, round } from '../../core/reader.js';
 import { DecodeError } from '../../core/errors.js';
-import type { Attributes, DecodeContext, Measurement } from '../../core/types.js';
+import type { Attributes, DecodeContext, Reading } from '../../core/types.js';
 import { Unit } from '../../core/units.js';
 
 /**
@@ -61,36 +61,40 @@ export function readFrame(bytes: Uint8Array, expectedDeviceType: number, ctx: De
  * (Netvox's threshold is 3.2 V). Reading the byte as a plain integer — an easy
  * mistake — gives you 17.8 V on a flagged 3.0 V cell.
  */
-export function readBattery(r: ByteReader): Measurement[] {
+export function readBattery(r: ByteReader): Reading[] {
   const raw = r.u8();
   const volts = round((raw & 0x7f) / 10, 1);
   const low = (raw & 0x80) !== 0;
   return [
-    { key: 'battery_voltage', kind: 'battery', unit: Unit.VOLT, value: volts },
-    { key: 'battery_low', kind: 'state', value: low, code: low ? 1 : 0 },
+    { key: 'battery_voltage', unit: Unit.VOLT, value: volts },
+    { key: 'battery_low', value: low },
   ];
 }
 
-export function currentMeasurement(
+/** `current` for a single-phase meter, `current_<n>` per phase on three-phase ones. */
+export function currentKey(phase: number | undefined): string {
+  return phase === undefined ? 'current' : `current_${phase}`;
+}
+
+export function currentReading(
   raw: number,
   multiplier: number | undefined,
-  index: number,
+  phase: number | undefined,
   ctx: DecodeContext,
-): Measurement {
+): Reading {
+  const key = currentKey(phase);
   if (multiplier === undefined) {
     ctx.warn({
       code: 'unscaled_value',
       message:
-        `current ${index} has no multiplier in this frame. Netvox splits the three-phase multipliers ` +
-        `across ReportType 0x01 and 0x02, so a single uplink cannot carry them all. The value below is ` +
+        `${key} has no multiplier in this frame. Netvox splits the three-phase multipliers ` +
+        `across ReportType 0x01 and 0x02, so a single uplink cannot carry them all. The value is ` +
         `the raw wire reading in mA; multiply it by the multiplier from the matching ReportType 0x02 frame, ` +
-        `or supply it via options.scaling.multiplier${index}.`,
+        `or supply it via scaling.multiplier${phase}.`,
     });
-    return { key: 'current', kind: 'current', unit: Unit.MILLIAMPERE, value: raw, index };
+    return { key, unit: Unit.MILLIAMPERE, value: raw };
   }
-  return {
-    key: 'current', kind: 'current', unit: Unit.MILLIAMPERE, value: raw * multiplier, index,
-  };
+  return { key, unit: Unit.MILLIAMPERE, value: raw * multiplier };
 }
 
 /**
@@ -122,15 +126,15 @@ export function readVersionReport(r: ByteReader): Attributes {
   };
 }
 
-export function thresholdAlarms(flags: number, phases: number): Measurement[] {
-  const out: Measurement[] = [];
+/** `current_alarm` for single phase, `current_alarm_<n>` per phase otherwise. */
+export function thresholdAlarms(flags: number, phases: number): Reading[] {
+  const out: Reading[] = [];
   for (let i = 0; i < phases; i++) {
     const low = (flags >> (i * 2)) & 0x01;
     const high = (flags >> (i * 2 + 1)) & 0x01;
     out.push({
-      key: 'current_alarm', kind: 'event', index: i + 1,
+      key: phases === 1 ? 'current_alarm' : `current_alarm_${i + 1}`,
       value: high ? 'high_current' : low ? 'low_current' : 'normal',
-      code: (high << 1) | low,
     });
   }
   return out;

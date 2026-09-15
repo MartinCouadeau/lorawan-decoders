@@ -1,7 +1,8 @@
 # lorawan-decoders
 
-Typed LoRaWAN payload decoders with one normalized output schema, for Milesight,
-Netvox, Ellenex and Dragino devices.
+Typed LoRaWAN payload decoders that return one flat telemetry object with the
+same key names and units for every vendor. Milesight, Netvox, Ellenex and
+Dragino.
 
 [![CI](https://github.com/MartinCouadeau/lorawan-decoders/actions/workflows/ci.yml/badge.svg)](https://github.com/MartinCouadeau/lorawan-decoders/actions/workflows/ci.yml)
 ![TypeScript](https://img.shields.io/badge/TypeScript-strict-blue)
@@ -10,6 +11,16 @@ Netvox, Ellenex and Dragino devices.
 **34 decoders covering 136 model names across 4 vendors**, written clean-room
 from public vendor documentation. No copied vendor code — see
 [Provenance](#provenance-and-licensing).
+
+```ts
+import { milesight } from 'lorawan-decoders';
+
+milesight.em400_tld('01755C0367010104824408050001');
+// { battery: 92, temperature: 25.7, distance: 2116, position: 'tilt' }
+```
+
+That is the whole output. The library decodes sensor data; everything else is
+yours.
 
 ## The problem
 
@@ -24,37 +35,14 @@ anything:
 | Scaling | per channel, in the docs | multiplier byte, encoded two different ways | **not on the wire at all** | fixed per field |
 
 Decode each of them in its own bespoke way and you end up with a fleet where
-`temperature` means `°C` on one device, tenths of a degree on another, and a raw
+`temperature` means °C on one device, tenths of a degree on another, and a raw
 ADC count on a third. A problem that surfaces the day someone writes an alarm
 rule across device types.
 
-This library decodes each vendor's format faithfully, then normalizes: every
-reading comes out as a `Measurement` with an explicit unit and a quantity kind.
-
-```ts
-import { decode } from 'lorawan-decoders';
-
-decode({ vendor: 'Milesight', model: 'EM400-TLD', payload: '01755C0367010104824408050001' });
-```
-
-```jsonc
-{
-  "vendor": "Milesight",
-  "model": "EM400-TLD",
-  "measurements": [
-    { "key": "battery",     "kind": "battery",     "value": 92,   "unit": "%",  "channel": "01/75" },
-    { "key": "temperature", "kind": "temperature", "value": 25.7, "unit": "°C", "channel": "03/67" },
-    { "key": "distance",    "kind": "distance",    "value": 2116, "unit": "mm", "channel": "04/82" },
-    { "key": "position",    "kind": "state",       "value": "tilt", "code": 1,  "channel": "05/00" }
-  ],
-  "attributes": {},
-  "warnings": [],
-  "raw": "01755c0367010104824408050001"
-}
-```
-
-`channel` is kept deliberately. When a value looks wrong at 2am, the first
-question is always "which bytes produced this?"
+This library decodes each vendor's format faithfully, then normalizes onto one
+vocabulary: `temperature` is always °C, `distance` always millimetres,
+`battery_voltage` always volts. The full table is in
+[docs/naming.md](docs/naming.md) and is enforced by the test suite.
 
 ## Install
 
@@ -62,47 +50,132 @@ question is always "which bytes produced this?"
 npm install lorawan-decoders
 ```
 
-## Use it in your network server
+## Two ways to call it
+
+**Typed accessor**, when you know the model at compile time:
 
 ```ts
-// ThingsBoard
-import { decode } from 'lorawan-decoders';
-import { toThingsBoard } from 'lorawan-decoders/adapters/thingsboard';
+import { milesight, netvox, ellenex, dragino } from 'lorawan-decoders';
 
-const uplink = decode({ vendor: 'Milesight', model: 'EM300-SLD', payload: bytes });
-return toThingsBoard(uplink, { deviceName: metadata.deviceName });
+const t = milesight.em310_tilt(payload);
+t.angle_x        // number | undefined, autocompletes
+t.humidity       // compile error: EM310-TILT has no humidity
 ```
 
-Adapters ship for ThingsBoard, ChirpStack and The Things Stack. Each maps onto
-that platform's actual contract rather than a lowest common denominator — TTN's
-adapter, for instance, routes decode warnings into TTN's own `warnings` array so
-they appear in the console next to the uplink.
+Property names are the model names lowercased with separators turned into `_`.
+Aliases work too: `milesight.em310tilt`, `netvox.r718n17`.
 
-### Buffered readings keep their own timestamps
-
-Devices that have been offline replay their history when they reconnect. If you
-stamp those with the receive time, six hours of data collapses into a vertical
-line on the chart. Measurements carry an `at` field, and the ThingsBoard adapter
-turns them into correctly-dated points:
+**Dynamic strings**, when the model name arrives at runtime from your network
+server:
 
 ```ts
-toThingsBoard(uplink, { deviceName: 'tank-3' }).telemetry;
-// [ { ts: 1600000000000, values: { temperature: 25.7 } },   // buffered
-//   { ts: 1735689600000, values: { battery: 92 } } ]        // live
+import { decode, isModel } from 'lorawan-decoders';
+
+decode('milesight', 'EM310-TILT', payload);
 ```
+
+Vendor and model are matched case-insensitively and ignoring separators.
+`EM310-TILT`, `EM310TILT`, `em310_tilt` and `Em310 Tilt` all reach the same
+decoder, so a ThingsBoard profile named one way and a ChirpStack profile named
+another both work. What you cannot do is misspell it:
+
+```
+DecodeError: no decoder for milesight "EM310-TLT"; did you mean "EM310-TILT"?
+```
+
+`isModel('milesight', name)` answers true or false with the same normalization,
+for validating profile names at setup time. `models('milesight')` lists every
+model with its accessor name, aliases, fPort and the keys it emits.
+
+### Payload formats
+
+Hex strings with or without separators, `Uint8Array`, `number[]`, or base64
+with `{ encoding: 'base64' }`. The encoding is never guessed: `01AB` is valid
+hex *and* valid base64, and a wrong guess produces plausible wrong numbers.
+
+```ts
+// ChirpStack v4 HTTP integration
+app.post('/uplink', (req, res) => {
+  const { deviceProfileName, data, fPort } = req.body;
+  if (!isModel('milesight', deviceProfileName)) return res.status(422).end();
+  res.json(decode('milesight', deviceProfileName, data, { encoding: 'base64', fPort }));
+});
+```
+
+## What comes back
+
+The plain call returns only readings: `Record<string, number | string | boolean>`.
+Nothing else, no nesting, no metadata. Pass `detailed: true` for the rest:
+
+```ts
+const d = ellenex.pls2_l('01E80000D6000022', { fPort: 15, detailed: true });
+```
+
+```jsonc
+{
+  "telemetry":  { "level_raw": 214, "battery_voltage": 3.4 },
+  "units":      { "level_raw": "raw", "battery_voltage": "V" },
+  "history":    [],
+  "attributes": { "header": "01e800" },
+  "warnings": [
+    { "code": "unscaled_value", "message": "level is a raw sensor count, reported on level_raw. …" }
+  ]
+}
+```
+
+- **units** — one entry per numeric key. States and events have none.
+- **history** — buffered readings the device replayed after being offline,
+  one record per device timestamp, oldest first. They never land in
+  `telemetry`: stamping six hours of backlog with the receive time collapses
+  it into a vertical line on the chart.
+- **attributes** — device metadata: firmware version, serial number, Netvox
+  multipliers, Ellenex header bytes. Not sensor data, so not telemetry.
+- **warnings** — unknown channel, truncated frame, unscaled value, sensor
+  fault, vendor quirk, duplicate key. The plain call is silent and returns
+  what decoded; `strict: true` throws on the first warning instead.
+
+```ts
+milesight.em300_sld('20ce00105e5f01016501', { detailed: true }).history;
+// [ { ts: '2020-09-13T12:26:40.000Z', temperature: 25.7, humidity: 50.5, leakage_status: 'leak' } ]
+```
+
+### Naming
+
+Five rules, enforced by tests and documented in [docs/naming.md](docs/naming.md):
+
+1. `snake_case`, lowercase ASCII.
+2. The bare name is the device's own sensor; extra sensors of the same
+   quantity get a suffix. `temperature` and `temperature_external` on a
+   Dragino LHT65; `current_1`, `current_2`, `current_3` on a three-phase meter.
+3. One key, one unit, forever. `tvoc` is µg/m³ and `tvoc_index` is an index;
+   `pressure` is kPa and `barometric_pressure` is hPa.
+4. Every key is in the shared vocabulary. A decoder that declares one outside
+   it fails to register.
+5. States and events are strings: `position: "tilt"`, `leakage_status: "leak"`.
+
+## Per-vendor imports
+
+```ts
+import { netvox } from 'lorawan-decoders/netvox';
+```
+
+Pulls one vendor's decoders only. `lorawan-decoders/milesight`, `/netvox`,
+`/ellenex`, `/dragino`.
 
 ## CLI
 
 ```bash
-npx lorawan-decode -v milesight -m EM400-TLD -x 01755C0367010104824408050001
+npx lorawan-decode -v milesight -m em400-tld -x 01755C0367010104824408050001
 
-# Milesight EM400-TLD   01755c0367010104824408050001
+# milesight em400-tld
 #
 #   battery                    92 %
 #   temperature                25.7 °C
 #   distance                   2116 mm
 #   position                   tilt
 
+npx lorawan-decode -v milesight -m em400-tld -b AXVcA2cBAQSCRAgFAAE=   # base64
+npx lorawan-decode -v ellenex -m pls2-l -x 01E80000D6000022 --json     # detailed shape
 npx lorawan-decode --list netvox
 ```
 
@@ -124,15 +197,17 @@ bytes were dropped. A missing reading with an explanation beats a missing readin
 `03/00` is the door magnet on a WS301 and the water-leak sensor on a WS303.
 `05/00` is tilt on an EM400-TLD, leak on an EM300-SLD, and motion on an AM308L.
 There is no universal Milesight channel map, so dispatch is per model and each
-model's map is a data table — 14 models, one parsing loop.
+model's map is a data table — 16 models, one parsing loop. The model's
+TypeScript return type is inferred from that table.
 
-### One decoder, 46 model names
+### One decoder, 33 model names
 
 Netvox's R718N family differs only by current-transformer rating: an R718N17 is
 a 75 A clamp, an R718N1100 a 1000 A one. Same DeviceType, same wire format, and
 the reading is always milliamps. Writing twelve near-identical decoders would be
 twelve places for a bug to hide, so the aliases are
-[generated](src/vendors/netvox/models.ts) from the rating list.
+[generated](src/vendors/netvox/models.ts) from the rating list, as literal
+types, so `netvox.r718n1100e` still autocompletes.
 
 ### When the vendor's own decoder is inconsistent, say so
 
@@ -143,9 +218,9 @@ and no worked example, so there is no way to tell from the docs whether it is a
 unit change or a bug.
 
 This library follows their implementation, so values match what a ThingsBoard
-install running the vendor codec shows, and attaches a `vendor_quirk` warning
-explaining the discrepancy. Silently picking one interpretation would make the
-inconsistency someone else's 2am problem.
+install running the vendor codec shows, keeps the reading on its own key
+(`distance_alarm_value`) so it can never be confused with `distance`, and
+attaches a `vendor_quirk` warning.
 
 ### Refusing to invent engineering units
 
@@ -155,14 +230,12 @@ EUI — it is not on the wire. Their own published sample data is labelled
 "pressure -1192 bar", which is physically impossible and shows exactly what
 happens when you treat the count as a value.
 
-So by default this decoder reports `unit: 'raw'` and warns. Give it a profile and
-it produces real units:
+So by default this decoder reports `level_raw` and warns; `level` is absent.
+Give it a profile and it produces real units on the real key:
 
 ```ts
-decode({
-  vendor: 'Ellenex', model: 'PLS2-L', payload: bytes,
-  scaling: { profile: 'adc14', range: 10, density: 0.85 },  // 10 m sensor, diesel
-});
+ellenex.pls2_l(bytes, { scaling: { profile: 'adc14', range: 10, density: 0.85 } });
+// { level: -1.278, battery_voltage: 3.4 }        10 m sensor, diesel
 ```
 
 ### Bounds-checked reads
@@ -175,7 +248,8 @@ are routine on LoRaWAN; they should fail at the point of truncation.
 ## Supported devices
 
 See [docs/supported-devices.md](docs/supported-devices.md) — generated from the
-registry by `npm run devices`, so it cannot drift from the code.
+registry by `npm run devices`, so it cannot drift from the code. For every model
+it lists the name to pass, the accessor, the aliases, and the keys it emits.
 
 Full details on each vendor's quirks: [docs/vendor-quirks.md](docs/vendor-quirks.md).
 
@@ -183,8 +257,9 @@ Full details on each vendor's quirks: [docs/vendor-quirks.md](docs/vendor-quirks
 
 See [docs/adding-a-decoder.md](docs/adding-a-decoder.md). Short version: a
 Milesight model is a table of channel specs; other vendors are a function. Every
-decoder needs a `source` naming the documentation it came from, and at least one
-test using a payload from that documentation with the values the vendor states.
+decoder declares the keys it emits (checked against the vocabulary), names the
+documentation it came from, and has at least one test using a payload from that
+documentation with the values the vendor states.
 
 ## Provenance and licensing
 
@@ -204,12 +279,12 @@ matters here:
 - **Dragino** formats come from their public user manuals and the Apache-2.0
   TTN Device Repository entries. Their own decoder repository is not used.
 
-Every `ModelDefinition` carries a `source` field naming where its format came
+Every model definition carries a `source` field naming where its format came
 from. See [NOTICE.md](NOTICE.md).
 
 ## Status
 
-v0.1. The four vendors here are the ones I have worked with most; the
+v0.2. The four vendors here are the ones I have worked with most; the
 architecture is built for adding more. Issues and PRs welcome, particularly test
 vectors captured from real hardware — several formats in here are verified
 against vendor documentation but not against a device I own.

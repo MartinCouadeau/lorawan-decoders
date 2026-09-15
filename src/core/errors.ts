@@ -17,5 +17,6 @@ export type DecodeErrorCode =
   | 'payload_too_short'
   | 'out_of_bounds'
   | 'bad_hex'
+  | 'bad_payload'
   | 'wrong_fport'
   | 'unsupported_report';

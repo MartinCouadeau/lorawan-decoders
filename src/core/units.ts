@@ -1,10 +1,10 @@
 /**
- * Units and quantity kinds.
+ * Units.
  *
- * The point of this module is that every vendor in this library emits the same
- * vocabulary. A Milesight EM400-TLD reporting millimetres and an Ellenex PLS2-L
- * reporting metres both end up as `kind: 'distance'` with an explicit unit, so a
- * consumer can convert without knowing which vendor produced the reading.
+ * Every vendor in this library emits the same vocabulary: a Milesight
+ * EM400-TLD and an Ellenex PLS2-L both report `distance` in millimetres, so a
+ * consumer never needs to know which vendor produced a reading. The key → unit
+ * table lives in vocabulary.ts.
  */
 
 export const Unit = {
@@ -18,13 +18,9 @@ export const Unit = {
   // pressure
   KILOPASCAL: 'kPa',
   HECTOPASCAL: 'hPa',
-  PASCAL: 'Pa',
-  BAR: 'bar',
   // electrical
   MILLIAMPERE: 'mA',
   VOLT: 'V',
-  MILLIVOLT: 'mV',
-  MICROAMPERE: 'µA',
   // concentration
   PPM: 'ppm',
   MICROGRAM_PER_M3: 'µg/m³',
@@ -39,35 +35,8 @@ export const Unit = {
   // dimensionless / index
   INDEX: 'index',
   // unknown scale — the device reported a raw number whose engineering unit is
-  // configured out of band (see Ellenex).
+  // configured out of band (see Ellenex). Only ever on a `*_raw` key.
   RAW: 'raw',
 } as const;
 
 export type Unit = (typeof Unit)[keyof typeof Unit];
-
-/**
- * What a measurement *is*, independent of the unit it arrived in. Consumers key
- * dashboards and alarm rules off this rather than off vendor field names.
- */
-export type QuantityKind =
-  | 'battery'
-  | 'temperature'
-  | 'humidity'
-  | 'distance'
-  | 'level'
-  | 'pressure'
-  | 'differential_pressure'
-  | 'current'
-  | 'voltage'
-  | 'illuminance'
-  | 'gas_concentration'
-  | 'particulate'
-  | 'co2'
-  | 'tvoc'
-  | 'sound_level'
-  | 'angle'
-  | 'occupancy'
-  | 'counter'
-  | 'state'
-  | 'event'
-  | 'unknown';

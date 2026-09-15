@@ -1,6 +1,8 @@
 import { ByteReader, round } from '../../core/reader.js';
-import type { DecodeContext, DecodeResult, Measurement, Attributes } from '../../core/types.js';
-import type { QuantityKind, Unit } from '../../core/units.js';
+import type {
+  Attributes, DecodeContext, DecodeResult, KeySpec, Reading, Telemetry, TelemetryValue,
+} from '../../core/types.js';
+import type { Unit } from '../../core/units.js';
 
 /**
  * Milesight's wire format is a stream of `[channel_id, channel_type, data…]`
@@ -17,19 +19,35 @@ import type { QuantityKind, Unit } from '../../core/units.js';
  */
 
 export interface ChannelEmit {
-  measurement(m: Measurement): void;
+  reading(r: Reading): void;
   attribute(key: string, value: string | number | boolean): void;
   warn(code: 'sensor_fault' | 'vendor_quirk' | 'undocumented_field', message: string): void;
   channel: string;
 }
 
-export interface ChannelSpec {
+/**
+ * One channel: how many data bytes follow the header, which telemetry keys it
+ * can emit (with units, for the vocabulary check and the docs), and how to
+ * read it. The type parameter carries the keys so a model's telemetry type is
+ * inferred from its channel map.
+ */
+export interface ChannelSpec<T extends object = Telemetry> {
   /** Data bytes after the two header bytes. */
   length: number;
+  keys: KeySpec<T>;
   read(r: ByteReader, emit: ChannelEmit): void;
 }
 
-export type ChannelMap = Record<string, ChannelSpec>;
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export type ChannelMap = Record<string, ChannelSpec<any>>;
+
+type UnionToIntersection<U> =
+  (U extends unknown ? (k: U) => void : never) extends (k: infer I) => void ? I : never;
+type SpecTelemetry<S> = S extends ChannelSpec<infer T> ? T : never;
+
+/** The telemetry type of a whole channel map: every key any channel can emit. */
+export type TelemetryOf<M extends ChannelMap> =
+  UnionToIntersection<SpecTelemetry<M[keyof M]>> extends infer R extends object ? R : never;
 
 /**
  * Builds the map key for a channel: `"03/67"` is channel id 0x03, channel type
@@ -55,13 +73,6 @@ export type ChannelMap = Record<string, ChannelSpec>;
  * variant of the same channel (`83/67` is `03/67` plus a trailing alarm byte),
  * and id `0xff` is a reserved namespace for device metadata rather than sensor
  * readings.
- *
- * Some type bytes line up with Cayenne LPP / IPSO -- 0x00 digital input, 0x67
- * temperature, 0x68 humidity, 0x73 barometer, 0x7d concentration, 0x82
- * distance. Others (0x75 battery, 0xce history, 0xcf tilt, 0xd2 counter) are
- * Milesight's own. Milesight does not document this correspondence anywhere;
- * it is an observed pattern, useful for guessing at an unfamiliar type byte
- * and not safe to rely on.
  */
 export function channelKey(id: number, type: number): string {
   return `${id.toString(16).padStart(2, '0')}/${type.toString(16).padStart(2, '0')}`;
@@ -69,7 +80,7 @@ export function channelKey(id: number, type: number): string {
 
 export function decodeTlv(bytes: Uint8Array, map: ChannelMap, ctx: DecodeContext): DecodeResult {
   const r = new ByteReader(bytes);
-  const measurements: Measurement[] = [];
+  const readings: Reading[] = [];
   const attributes: Attributes = {};
 
   while (r.remaining >= 2) {
@@ -103,8 +114,8 @@ export function decodeTlv(bytes: Uint8Array, map: ChannelMap, ctx: DecodeContext
 
     const emit: ChannelEmit = {
       channel: key,
-      measurement(m) {
-        measurements.push({ channel: key, ...m });
+      reading(m) {
+        readings.push(m);
       },
       attribute(k, v) {
         attributes[k] = v;
@@ -134,12 +145,19 @@ export function decodeTlv(bytes: Uint8Array, map: ChannelMap, ctx: DecodeContext
     });
   }
 
-  return { measurements, attributes };
+  return { readings, attributes };
+}
+
+/** Every key any channel in the map can emit, for `ModelDefinition.keys`. */
+export function keysOf(map: ChannelMap): Record<string, Unit | null> {
+  const out: Record<string, Unit | null> = {};
+  for (const spec of Object.values(map)) Object.assign(out, spec.keys);
+  return out;
 }
 
 // ---------------------------------------------------------------------------
-// Field builders. Model maps below are written in terms of these, so adding a
-// model is a table entry rather than a new parsing loop.
+// Field builders. Model maps are written in terms of these, so adding a model
+// is a table entry rather than a new parsing loop.
 // ---------------------------------------------------------------------------
 
 type IntType = 'u8' | 'i8' | 'u16le' | 'i16le' | 'u32le' | 'i32le';
@@ -159,68 +177,76 @@ function readInt(r: ByteReader, type: IntType): number {
   }
 }
 
-export interface NumericOptions {
-  key: string;
-  kind: QuantityKind;
+export interface NumericOptions<K extends string> {
+  key: K;
   type: IntType;
-  unit?: Unit;
+  unit: Unit;
   /** Wire value is divided by this. */
   divisor?: number;
   decimals?: number;
-  index?: number | string;
-  /** Raw values that mean "no reading", mapped to a fault label. */
+  /** Raw values that mean "no reading", mapped to a fault label on `<key>_status`. */
   sentinels?: Record<number, string>;
 }
 
-export function numeric(opts: NumericOptions): ChannelSpec {
-  const { key, kind, type, unit, divisor = 1, decimals = divisor === 1 ? 0 : 2, index, sentinels } = opts;
+type NumericT<K extends string> = { [P in K]?: number };
+type StatusT<K extends string> = { [P in `${K}_status`]?: string };
+
+export function numeric<K extends string>(
+  opts: NumericOptions<K> & { sentinels: Record<number, string> },
+): ChannelSpec<NumericT<K> & StatusT<K>>;
+export function numeric<K extends string>(opts: NumericOptions<K>): ChannelSpec<NumericT<K>>;
+export function numeric<K extends string>(opts: NumericOptions<K>): ChannelSpec<Telemetry> {
+  const { key, type, unit, divisor = 1, decimals = divisor === 1 ? 0 : 2, sentinels } = opts;
+  const keys: Record<string, Unit | null> = { [key]: unit };
+  if (sentinels) keys[`${key}_status`] = null;
   return {
     length: WIDTH[type],
+    keys,
     read(r, emit) {
       const raw = readInt(r, type);
       const sentinel = sentinels?.[raw];
       if (sentinel !== undefined) {
         emit.warn('sensor_fault', `${key}: device reported sentinel 0x${raw.toString(16)} (${sentinel})`);
-        emit.measurement({
-          key: `${key}_status`, value: sentinel, kind: 'state', code: raw,
-          ...(index !== undefined ? { index } : {}),
-        });
+        emit.reading({ key: `${key}_status`, value: sentinel });
         return;
       }
-      emit.measurement({
-        key, kind, value: round(raw / divisor, decimals),
-        ...(unit ? { unit } : {}), ...(index !== undefined ? { index } : {}),
-      });
+      emit.reading({ key, unit, value: round(raw / divisor, decimals) });
     },
   };
 }
 
-export function enumState(
-  key: string,
+export function enumState<K extends string>(
+  key: K,
   values: Record<number, string>,
-  kind: QuantityKind = 'state',
-): ChannelSpec {
+): ChannelSpec<{ [P in K]?: string }> {
   return {
     length: 1,
+    keys: { [key]: null } as KeySpec<{ [P in K]?: string }>,
     read(r, emit) {
       const raw = r.u8();
-      emit.measurement({ key, kind, value: values[raw] ?? `unknown(${raw})`, code: raw });
+      emit.reading({ key, value: values[raw] ?? `unknown(${raw})` });
     },
   };
 }
 
 /** Arbitrary multi-field payload. `length` must match what `read` consumes. */
-export function struct(length: number, read: ChannelSpec['read']): ChannelSpec {
-  return { length, read };
+export function struct<T extends object>(
+  length: number,
+  keys: KeySpec<T>,
+  read: ChannelSpec['read'],
+): ChannelSpec<T> {
+  return { length, keys, read };
 }
 
+/** Device metadata channel: emits an attribute, never telemetry. */
 export function attribute(
   length: number,
   key: string,
-  format: (r: ByteReader) => string | number | boolean,
-): ChannelSpec {
+  format: (r: ByteReader) => TelemetryValue,
+): ChannelSpec<Record<never, never>> {
   return {
     length,
+    keys: {},
     read(r, emit) {
       emit.attribute(key, format(r));
     },

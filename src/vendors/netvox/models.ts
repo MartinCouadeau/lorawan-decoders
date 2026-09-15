@@ -1,8 +1,8 @@
 import { DecodeError } from '../../core/errors.js';
-import type { Attributes, DecodeContext, DecodeResult, Measurement, ModelDefinition } from '../../core/types.js';
+import type { Attributes, DecodeContext, DecodeResult, ModelDefinition, Reading } from '../../core/types.js';
 import { Unit } from '../../core/units.js';
 import {
-  NETVOX_UPLINK_FPORT, currentMeasurement, readBattery, readFrame, readVersionReport,
+  NETVOX_UPLINK_FPORT, currentReading, readBattery, readFrame, readVersionReport,
   scalingMultiplier, thresholdAlarms, unpackMultipliers,
 } from './frame.js';
 
@@ -18,9 +18,15 @@ const SOURCE =
  *
  * So one decoder serves the whole family. Rather than typing out 46 aliases,
  * we generate them, which is also self-documenting about *why* they collapse.
+ * The generic signature keeps the generated names as literal types so the
+ * vendor namespace autocompletes `netvox.r718n17` like any other model.
  */
-function ctVariants(base: string, ratings: readonly string[], suffixes: readonly string[]): string[] {
-  const out: string[] = [];
+function ctVariants<B extends string, R extends string, S extends string>(
+  base: B,
+  ratings: readonly R[],
+  suffixes: readonly S[],
+): Array<`${B}${R}${S}`> {
+  const out: Array<`${B}${R}${S}`> = [];
   for (const rating of ratings) {
     for (const suffix of suffixes) out.push(`${base}${rating}${suffix}`);
   }
@@ -30,10 +36,52 @@ function ctVariants(base: string, ratings: readonly string[], suffixes: readonly
 const RATINGS_1P = ['', '3', '7', '15', '25', '63', '100', '300'] as const;
 const RATINGS_3P = ['', '3', '7', '15', '25', '63', '100', '300'] as const;
 
+export interface SinglePhaseTelemetry {
+  battery_voltage?: number;
+  battery_low?: boolean;
+  current?: number;
+  current_alarm?: string;
+}
+
+export interface ThreePhaseTelemetry {
+  battery_voltage?: number;
+  battery_low?: boolean;
+  current_1?: number;
+  current_2?: number;
+  current_3?: number;
+  current_alarm_1?: string;
+  current_alarm_2?: string;
+  current_alarm_3?: string;
+}
+
+export interface LightSinglePhaseTelemetry extends SinglePhaseTelemetry {
+  illuminance?: number;
+}
+
+export interface LightThreePhaseTelemetry extends ThreePhaseTelemetry {
+  illuminance?: number;
+}
+
+export interface CurrentInterfaceTelemetry {
+  battery_voltage?: number;
+  battery_low?: boolean;
+  channel_1?: number;
+  channel_2?: number;
+  channel_3?: number;
+}
+
+const BATTERY_KEYS = { battery_voltage: Unit.VOLT, battery_low: null } as const;
+const SINGLE_PHASE_KEYS = { ...BATTERY_KEYS, current: Unit.MILLIAMPERE, current_alarm: null } as const;
+const THREE_PHASE_KEYS = {
+  ...BATTERY_KEYS,
+  current_1: Unit.MILLIAMPERE, current_2: Unit.MILLIAMPERE, current_3: Unit.MILLIAMPERE,
+  current_alarm_1: null, current_alarm_2: null, current_alarm_3: null,
+} as const;
+
 /** R718N1 — single-phase current meter. DeviceType 0x49. */
 function decodeN1(bytes: Uint8Array, ctx: DecodeContext): DecodeResult {
   const { reportType, reader: r } = readFrame(bytes, 0x49, ctx);
-  const measurements: Measurement[] = [];
+  const readings: Reading[] = [];
   let attributes: Attributes = {};
 
   switch (reportType) {
@@ -41,27 +89,27 @@ function decodeN1(bytes: Uint8Array, ctx: DecodeContext): DecodeResult {
       attributes = readVersionReport(r);
       break;
     case 0x01: {
-      measurements.push(...readBattery(r));
+      readings.push(...readBattery(r));
       const raw = r.u16be();
       const multiplier = r.u8() || 1;
-      measurements.push(currentMeasurement(raw, multiplier, 1, ctx));
+      readings.push(currentReading(raw, multiplier, undefined, ctx));
       attributes['current_multiplier'] = multiplier;
       // The threshold-alarm byte exists only on the newer R718N1xxx(E)
       // firmware; older units document bytes 7..10 as reserved zeroes, which
       // decodes as "normal" and is harmless.
-      measurements.push(...thresholdAlarms(r.u8(), 1));
+      readings.push(...thresholdAlarms(r.u8(), 1));
       break;
     }
     default:
       unsupported(reportType, ctx);
   }
-  return { measurements, attributes };
+  return { readings, attributes };
 }
 
 /** R718N3 — three-phase. DeviceType 0x4A. Four report types. */
 function decodeN3(bytes: Uint8Array, ctx: DecodeContext): DecodeResult {
   const { reportType, reader: r } = readFrame(bytes, 0x4a, ctx);
-  const measurements: Measurement[] = [];
+  const readings: Reading[] = [];
   let attributes: Attributes = {};
 
   switch (reportType) {
@@ -69,42 +117,42 @@ function decodeN3(bytes: Uint8Array, ctx: DecodeContext): DecodeResult {
       attributes = readVersionReport(r);
       break;
     case 0x01: {
-      measurements.push(...readBattery(r));
+      readings.push(...readBattery(r));
       const raws = [r.u16be(), r.u16be(), r.u16be()];
       const m1 = r.u8() || 1;
       const multipliers = [m1, scalingMultiplier(ctx, 2), scalingMultiplier(ctx, 3)];
-      raws.forEach((raw, i) => measurements.push(currentMeasurement(raw, multipliers[i], i + 1, ctx)));
+      raws.forEach((raw, i) => readings.push(currentReading(raw, multipliers[i], i + 1, ctx)));
       attributes['current_multiplier_1'] = m1;
       break;
     }
     case 0x02: {
-      measurements.push(...readBattery(r));
+      readings.push(...readBattery(r));
       attributes['current_multiplier_2'] = r.u8() || 1;
       attributes['current_multiplier_3'] = r.u8() || 1;
       break;
     }
     case 0x03: {
-      measurements.push(...readBattery(r));
+      readings.push(...readBattery(r));
       const raws = [r.u16be(), r.u16be(), r.u16be()];
       const multipliers = unpackMultipliers(r.u8());
-      raws.forEach((raw, i) => measurements.push(currentMeasurement(raw, multipliers[i], i + 1, ctx)));
+      raws.forEach((raw, i) => readings.push(currentReading(raw, multipliers[i], i + 1, ctx)));
       multipliers.forEach((m, i) => { attributes[`current_multiplier_${i + 1}`] = m; });
       break;
     }
     case 0x04:
-      measurements.push(...readBattery(r));
-      measurements.push(...thresholdAlarms(r.u8(), 3));
+      readings.push(...readBattery(r));
+      readings.push(...thresholdAlarms(r.u8(), 3));
       break;
     default:
       unsupported(reportType, ctx);
   }
-  return { measurements, attributes };
+  return { readings, attributes };
 }
 
 /** R718NL1 — light sensor plus single-phase current. DeviceType 0x98. */
 function decodeNL1(bytes: Uint8Array, ctx: DecodeContext): DecodeResult {
   const { reportType, reader: r } = readFrame(bytes, 0x98, ctx);
-  const measurements: Measurement[] = [];
+  const readings: Reading[] = [];
   let attributes: Attributes = {};
 
   switch (reportType) {
@@ -112,24 +160,24 @@ function decodeNL1(bytes: Uint8Array, ctx: DecodeContext): DecodeResult {
       attributes = readVersionReport(r);
       break;
     case 0x01: {
-      measurements.push(...readBattery(r));
+      readings.push(...readBattery(r));
       const raw = r.u16be();
       const multiplier = r.u8() || 1;
-      measurements.push(currentMeasurement(raw, multiplier, 1, ctx));
+      readings.push(currentReading(raw, multiplier, undefined, ctx));
       attributes['current_multiplier'] = multiplier;
-      measurements.push({ key: 'illuminance', kind: 'illuminance', unit: Unit.LUX, value: r.u32be() });
+      readings.push({ key: 'illuminance', unit: Unit.LUX, value: r.u32be() });
       break;
     }
     default:
       unsupported(reportType, ctx);
   }
-  return { measurements, attributes };
+  return { readings, attributes };
 }
 
 /** R718NL3 — light sensor plus three-phase current. DeviceType 0x99. */
 function decodeNL3(bytes: Uint8Array, ctx: DecodeContext): DecodeResult {
   const { reportType, reader: r } = readFrame(bytes, 0x99, ctx);
-  const measurements: Measurement[] = [];
+  const readings: Reading[] = [];
   let attributes: Attributes = {};
 
   switch (reportType) {
@@ -137,36 +185,39 @@ function decodeNL3(bytes: Uint8Array, ctx: DecodeContext): DecodeResult {
       attributes = readVersionReport(r);
       break;
     case 0x01: {
-      measurements.push(...readBattery(r));
+      readings.push(...readBattery(r));
       const raws = [r.u16be(), r.u16be(), r.u16be()];
       const m1 = r.u8() || 1;
       const multipliers = [m1, scalingMultiplier(ctx, 2), scalingMultiplier(ctx, 3)];
-      raws.forEach((raw, i) => measurements.push(currentMeasurement(raw, multipliers[i], i + 1, ctx)));
+      raws.forEach((raw, i) => readings.push(currentReading(raw, multipliers[i], i + 1, ctx)));
       attributes['current_multiplier_1'] = m1;
       break;
     }
     case 0x02: {
-      measurements.push(...readBattery(r));
+      readings.push(...readBattery(r));
       attributes['current_multiplier_2'] = r.u8() || 1;
       attributes['current_multiplier_3'] = r.u8() || 1;
-      measurements.push({ key: 'illuminance', kind: 'illuminance', unit: Unit.LUX, value: r.u32be() });
+      readings.push({ key: 'illuminance', unit: Unit.LUX, value: r.u32be() });
       break;
     }
     default:
       unsupported(reportType, ctx);
   }
-  return { measurements, attributes };
+  return { readings, attributes };
 }
 
 /**
- * R718N360 — three-channel current *interface*. DeviceType 0xCA.
- * Note ReportType 0x02 has no battery byte: channels B and C consume all eight
+ * R718N360 — three-channel current *interface*. DeviceType 0xCA. The channel
+ * values are raw counts whose scale depends on the attached transformer, so
+ * they are `channel_1..3` with unit `raw`, never `current`.
+ *
+ * ReportType 0x02 has no battery byte: channels B and C consume all eight
  * payload bytes. Assuming a uniform "battery is always byte 3" would misread
  * the top half of channel B as a voltage.
  */
 function decodeN360(bytes: Uint8Array, ctx: DecodeContext): DecodeResult {
   const { reportType, reader: r } = readFrame(bytes, 0xca, ctx);
-  const measurements: Measurement[] = [];
+  const readings: Reading[] = [];
   let attributes: Attributes = {};
 
   switch (reportType) {
@@ -174,17 +225,17 @@ function decodeN360(bytes: Uint8Array, ctx: DecodeContext): DecodeResult {
       attributes = readVersionReport(r);
       break;
     case 0x01:
-      measurements.push(...readBattery(r));
-      measurements.push({ key: 'channel', kind: 'current', unit: Unit.RAW, value: r.u32be(), index: 'A' });
+      readings.push(...readBattery(r));
+      readings.push({ key: 'channel_1', unit: Unit.RAW, value: r.u32be() });
       break;
     case 0x02:
-      measurements.push({ key: 'channel', kind: 'current', unit: Unit.RAW, value: r.u32be(), index: 'B' });
-      measurements.push({ key: 'channel', kind: 'current', unit: Unit.RAW, value: r.u32be(), index: 'C' });
+      readings.push({ key: 'channel_2', unit: Unit.RAW, value: r.u32be() });
+      readings.push({ key: 'channel_3', unit: Unit.RAW, value: r.u32be() });
       break;
     default:
       unsupported(reportType, ctx);
   }
-  return { measurements, attributes };
+  return { readings, attributes };
 }
 
 function unsupported(reportType: number, ctx: DecodeContext): never {
@@ -195,34 +246,43 @@ function unsupported(reportType: number, ctx: DecodeContext): never {
   );
 }
 
-export const NETVOX_MODELS: readonly ModelDefinition[] = [
-  {
-    vendor: 'Netvox', model: 'R718N1', source: SOURCE, fPort: NETVOX_UPLINK_FPORT,
-    description: 'Single-phase current meter (all CT ratings, ±detachable cables)',
-    aliases: ctVariants('R718N1', RATINGS_1P, ['', 'E']),
-    decode: decodeN1,
-  },
-  {
-    vendor: 'Netvox', model: 'R718N3', source: SOURCE, fPort: NETVOX_UPLINK_FPORT,
-    description: 'Three-phase current meter (all CT ratings, ±detachable cables, ±D revision)',
-    aliases: ctVariants('R718N3', RATINGS_3P, ['', 'E', 'D', 'DE']),
-    decode: decodeN3,
-  },
-  {
-    vendor: 'Netvox', model: 'R718NL1', source: SOURCE, fPort: NETVOX_UPLINK_FPORT,
-    description: 'Light sensor + single-phase current meter',
-    aliases: ctVariants('R718NL1', RATINGS_1P, ['', 'E']),
-    decode: decodeNL1,
-  },
-  {
-    vendor: 'Netvox', model: 'R718NL3', source: SOURCE, fPort: NETVOX_UPLINK_FPORT,
-    description: 'Light sensor + three-phase current meter',
-    aliases: ctVariants('R718NL3', RATINGS_3P, ['', 'E']),
-    decode: decodeNL3,
-  },
-  {
-    vendor: 'Netvox', model: 'R718N360', source: SOURCE, fPort: NETVOX_UPLINK_FPORT,
-    description: 'Three-channel current interface (raw channel values, no battery byte on ReportType 0x02)',
-    decode: decodeN360,
-  },
-];
+const R718N1: ModelDefinition<SinglePhaseTelemetry, 'R718N1' | `R718N1${(typeof RATINGS_1P)[number]}${'' | 'E'}`> = {
+  vendor: 'Netvox', model: 'R718N1', source: SOURCE, fPort: NETVOX_UPLINK_FPORT,
+  description: 'Single-phase current meter (all CT ratings, ±detachable cables)',
+  aliases: ctVariants('R718N1', RATINGS_1P, ['', 'E']),
+  keys: SINGLE_PHASE_KEYS,
+  decode: decodeN1,
+};
+
+const R718N3: ModelDefinition<ThreePhaseTelemetry, 'R718N3' | `R718N3${(typeof RATINGS_3P)[number]}${'' | 'E' | 'D' | 'DE'}`> = {
+  vendor: 'Netvox', model: 'R718N3', source: SOURCE, fPort: NETVOX_UPLINK_FPORT,
+  description: 'Three-phase current meter (all CT ratings, ±detachable cables, ±D revision)',
+  aliases: ctVariants('R718N3', RATINGS_3P, ['', 'E', 'D', 'DE']),
+  keys: THREE_PHASE_KEYS,
+  decode: decodeN3,
+};
+
+const R718NL1: ModelDefinition<LightSinglePhaseTelemetry, 'R718NL1' | `R718NL1${(typeof RATINGS_1P)[number]}${'' | 'E'}`> = {
+  vendor: 'Netvox', model: 'R718NL1', source: SOURCE, fPort: NETVOX_UPLINK_FPORT,
+  description: 'Light sensor + single-phase current meter',
+  aliases: ctVariants('R718NL1', RATINGS_1P, ['', 'E']),
+  keys: { ...SINGLE_PHASE_KEYS, illuminance: Unit.LUX },
+  decode: decodeNL1,
+};
+
+const R718NL3: ModelDefinition<LightThreePhaseTelemetry, 'R718NL3' | `R718NL3${(typeof RATINGS_3P)[number]}${'' | 'E'}`> = {
+  vendor: 'Netvox', model: 'R718NL3', source: SOURCE, fPort: NETVOX_UPLINK_FPORT,
+  description: 'Light sensor + three-phase current meter',
+  aliases: ctVariants('R718NL3', RATINGS_3P, ['', 'E']),
+  keys: { ...THREE_PHASE_KEYS, illuminance: Unit.LUX },
+  decode: decodeNL3,
+};
+
+const R718N360: ModelDefinition<CurrentInterfaceTelemetry, 'R718N360'> = {
+  vendor: 'Netvox', model: 'R718N360', source: SOURCE, fPort: NETVOX_UPLINK_FPORT,
+  description: 'Three-channel current interface (raw channel values, no battery byte on ReportType 0x02)',
+  keys: { ...BATTERY_KEYS, channel_1: Unit.RAW, channel_2: Unit.RAW, channel_3: Unit.RAW },
+  decode: decodeN360,
+};
+
+export const NETVOX_MODELS = [R718N1, R718N3, R718NL1, R718NL3, R718N360] as const;

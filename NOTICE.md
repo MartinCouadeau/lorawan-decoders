@@ -19,7 +19,8 @@ and the worked hex examples published alongside them.
 decoders into an MIT-licensed library would violate their licence. This
 implementation shares no code with theirs — it uses a different architecture
 (declarative channel maps over a shared TLV engine, versus a per-model switch
-statement) and a different output schema.
+statement) and a different output schema: one flat object keyed by a shared
+cross-vendor vocabulary.
 
 Two places where this library deliberately differs from Milesight's published
 behaviour, both documented in [docs/vendor-quirks.md](docs/vendor-quirks.md):

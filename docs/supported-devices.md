@@ -4,70 +4,150 @@
 
 **34 decoders covering 136 model names across 4 vendors.**
 
-Model names are matched case-insensitively and ignore separators, so `EM400-TLD`,
-`em400tld` and `EM400 TLD` all resolve to the same decoder. That is not a
-nicety: in a real fleet the same device arrives spelled three different ways
-from three different integrations.
+Two ways to reach a decoder:
 
-### Dragino
+- **Accessor**, typed: `milesight.em310_tilt(payload)`. The property name is the
+  model name lowercased with separators turned into `_`. Aliases are properties
+  too (`milesight.em310tilt`).
+- **Name string**, dynamic: `decode('milesight', 'em310-tilt', payload)`. Case and
+  separators are ignored, so `EM310-TILT`, `EM310TILT`, `em310_tilt` and
+  `Em310 Tilt` all resolve to the same decoder. That is not a nicety: in a real
+  fleet the same device arrives spelled three different ways from three
+  different integrations. Use `isModel(vendor, name)` to validate a profile name
+  up front; an unknown name throws with a did-you-mean suggestion.
 
-| Decoder | Covers | fPort | Description |
-|---|---|---|---|
-| `LHT65` | 2 model names | 2 | Temperature and humidity sensor with external probe input (DS18B20, ADC, counter, interrupt) |
+Every key below is in the shared vocabulary in [naming.md](naming.md), with the
+unit shown. Keys without a unit are states or events and carry a string.
+
+## Dragino
+
+```ts
+import { dragino } from 'lorawan-decoders/dragino';
+```
+
+| Model | Name to pass | Accessor | Also answers to | fPort | Description |
+|---|---|---|---|---|---|
+| LHT65 | `'lht65'` | `dragino.lht65` | `LHT65N` | 2 | Temperature and humidity sensor with external probe input (DS18B20, ADC, counter, interrupt) |
+
+### Telemetry keys
+
+| Model | Keys (unit) |
+|---|---|
+| LHT65 | `battery_voltage` (V), `battery_status`, `temperature` (°C), `temperature_external` (°C), `humidity` (%), `input_level`, `interrupt`, `illuminance` (lx), `input_voltage` (V), `pulse_count` (count) |
 
 _Source: Dragino LHT65/LHT65N user manuals (wiki.dragino.com) and the Apache-2.0 TTN Device Repository entries. Implemented from the documented byte layout; no vendor code reused._
 
-### Ellenex
+## Ellenex
 
-| Decoder | Covers | fPort | Description |
-|---|---|---|---|
-| `PDS2-L` | 2 model names | 15 | Differential pressure sensor |
-| `PDT2-L` | 2 model names | 15 | Differential pressure with temperature (reports pascals on V6) |
-| `PLC2-L` | 2 model names | 15 | Compact level sensor |
-| `PLD2-L` | 2 model names | 15 | Level sensor with temperature |
-| `PLM2-L` | 2 model names | 15 | Level sensor, mid range |
-| `PLS2-L` | 2 model names | 15 | Submersible level sensor |
-| `PTC2-L` | 2 model names | 15 | Compact pressure transmitter |
-| `PTD2-L` | 2 model names | 15 | Pressure transmitter with temperature |
-| `PTF2-L` | 2 model names | 15 | Flush pressure transmitter |
-| `PTS2-L` | 2 model names | 15 | Submersible pressure transmitter |
-| `PTS3-L` | 2 model names | 15 | Submersible pressure transmitter (3-series) |
-| `RS1-L` | 2 model names | 15 | Universal sensor interface (4-20 mA, 0-10 V, PT100/PT1000, or pulse) |
+```ts
+import { ellenex } from 'lorawan-decoders/ellenex';
+```
+
+| Model | Name to pass | Accessor | Also answers to | fPort | Description |
+|---|---|---|---|---|---|
+| PDS2-L | `'pds2-l'` | `ellenex.pds2_l` | `PDS2L` | 15 | Differential pressure sensor |
+| PDT2-L | `'pdt2-l'` | `ellenex.pdt2_l` | `PDT2L` | 15 | Differential pressure with temperature (V6 reports DP in pascals) |
+| PLC2-L | `'plc2-l'` | `ellenex.plc2_l` | `PLC2L` | 15 | Compact level sensor |
+| PLD2-L | `'pld2-l'` | `ellenex.pld2_l` | `PLD2L` | 15 | Level sensor with temperature |
+| PLM2-L | `'plm2-l'` | `ellenex.plm2_l` | `PLM2L` | 15 | Level sensor, mid range |
+| PLS2-L | `'pls2-l'` | `ellenex.pls2_l` | `PLS2L` | 15 | Submersible level sensor |
+| PTC2-L | `'ptc2-l'` | `ellenex.ptc2_l` | `PTC2L` | 15 | Compact pressure transmitter |
+| PTD2-L | `'ptd2-l'` | `ellenex.ptd2_l` | `PTD2L` | 15 | Pressure transmitter with temperature |
+| PTF2-L | `'ptf2-l'` | `ellenex.ptf2_l` | `PTF2L` | 15 | Flush pressure transmitter |
+| PTS2-L | `'pts2-l'` | `ellenex.pts2_l` | `PTS2L` | 15 | Submersible pressure transmitter |
+| PTS3-L | `'pts3-l'` | `ellenex.pts3_l` | `PTS3L` | 15 | Submersible pressure transmitter (3-series) |
+| RS1-L | `'rs1-l'` | `ellenex.rs1_l` | `RS1L` | 15 | Universal sensor interface (4-20 mA, 0-10 V, PT100/PT1000, or pulse) |
+
+### Telemetry keys
+
+| Model | Keys (unit) |
+|---|---|
+| PDS2-L | `battery_voltage` (V), `pressure` (kPa), `differential_pressure` (kPa), `temperature` (°C), `level` (m), `distance` (mm), `current` (mA), `current_1` (mA), `current_2` (mA), `current_3` (mA), `current_4` (mA), `input_voltage` (V), `adc_raw` (raw), `pulse_count` (count), `dry_contact`, `differential_pressure_raw` (raw) |
+| PDT2-L | `battery_voltage` (V), `pressure` (kPa), `differential_pressure` (kPa), `temperature` (°C), `level` (m), `distance` (mm), `current` (mA), `current_1` (mA), `current_2` (mA), `current_3` (mA), `current_4` (mA), `input_voltage` (V), `adc_raw` (raw), `pulse_count` (count), `dry_contact`, `differential_pressure_raw` (raw), `temperature_raw` (raw) |
+| PLC2-L | `battery_voltage` (V), `pressure` (kPa), `differential_pressure` (kPa), `temperature` (°C), `level` (m), `distance` (mm), `current` (mA), `current_1` (mA), `current_2` (mA), `current_3` (mA), `current_4` (mA), `input_voltage` (V), `adc_raw` (raw), `pulse_count` (count), `dry_contact`, `level_raw` (raw) |
+| PLD2-L | `battery_voltage` (V), `pressure` (kPa), `differential_pressure` (kPa), `temperature` (°C), `level` (m), `distance` (mm), `current` (mA), `current_1` (mA), `current_2` (mA), `current_3` (mA), `current_4` (mA), `input_voltage` (V), `adc_raw` (raw), `pulse_count` (count), `dry_contact`, `level_raw` (raw), `temperature_raw` (raw) |
+| PLM2-L | `battery_voltage` (V), `pressure` (kPa), `differential_pressure` (kPa), `temperature` (°C), `level` (m), `distance` (mm), `current` (mA), `current_1` (mA), `current_2` (mA), `current_3` (mA), `current_4` (mA), `input_voltage` (V), `adc_raw` (raw), `pulse_count` (count), `dry_contact`, `level_raw` (raw) |
+| PLS2-L | `battery_voltage` (V), `pressure` (kPa), `differential_pressure` (kPa), `temperature` (°C), `level` (m), `distance` (mm), `current` (mA), `current_1` (mA), `current_2` (mA), `current_3` (mA), `current_4` (mA), `input_voltage` (V), `adc_raw` (raw), `pulse_count` (count), `dry_contact`, `level_raw` (raw) |
+| PTC2-L | `battery_voltage` (V), `pressure` (kPa), `differential_pressure` (kPa), `temperature` (°C), `level` (m), `distance` (mm), `current` (mA), `current_1` (mA), `current_2` (mA), `current_3` (mA), `current_4` (mA), `input_voltage` (V), `adc_raw` (raw), `pulse_count` (count), `dry_contact`, `pressure_raw` (raw) |
+| PTD2-L | `battery_voltage` (V), `pressure` (kPa), `differential_pressure` (kPa), `temperature` (°C), `level` (m), `distance` (mm), `current` (mA), `current_1` (mA), `current_2` (mA), `current_3` (mA), `current_4` (mA), `input_voltage` (V), `adc_raw` (raw), `pulse_count` (count), `dry_contact`, `pressure_raw` (raw), `temperature_raw` (raw) |
+| PTF2-L | `battery_voltage` (V), `pressure` (kPa), `differential_pressure` (kPa), `temperature` (°C), `level` (m), `distance` (mm), `current` (mA), `current_1` (mA), `current_2` (mA), `current_3` (mA), `current_4` (mA), `input_voltage` (V), `adc_raw` (raw), `pulse_count` (count), `dry_contact`, `pressure_raw` (raw) |
+| PTS2-L | `battery_voltage` (V), `pressure` (kPa), `differential_pressure` (kPa), `temperature` (°C), `level` (m), `distance` (mm), `current` (mA), `current_1` (mA), `current_2` (mA), `current_3` (mA), `current_4` (mA), `input_voltage` (V), `adc_raw` (raw), `pulse_count` (count), `dry_contact`, `pressure_raw` (raw) |
+| PTS3-L | `battery_voltage` (V), `pressure` (kPa), `differential_pressure` (kPa), `temperature` (°C), `level` (m), `distance` (mm), `current` (mA), `current_1` (mA), `current_2` (mA), `current_3` (mA), `current_4` (mA), `input_voltage` (V), `adc_raw` (raw), `pulse_count` (count), `dry_contact`, `pressure_raw` (raw) |
+| RS1-L | `battery_voltage` (V), `pressure` (kPa), `differential_pressure` (kPa), `temperature` (°C), `level` (m), `distance` (mm), `current` (mA), `current_1` (mA), `current_2` (mA), `current_3` (mA), `current_4` (mA), `input_voltage` (V), `adc_raw` (raw), `pulse_count` (count), `dry_contact`, `sensor_reading` (raw), `temperature_raw` (raw) |
 
 _Source: Ellenex public payload decoders (github.com/ellenex/lorawan-payload-decoders) and the Apache-2.0 TTN Device Repository codecs, verified against their published test vectors. Implemented from the documented layout; no vendor code reused (their repo carries no licence)._
 
-### Milesight
+## Milesight
 
-| Decoder | Covers | fPort | Description |
-|---|---|---|---|
-| `AM103` | 2 model names | — | Temperature, humidity and CO2 sensor (AM103L adds light level) |
-| `AM308L` | 1 model | — | Indoor air quality sensor (CO2, tVOC, PM, PIR) |
-| `EM300-SLD` | 2 model names | — | Temperature, humidity and spot water-leak sensor |
-| `EM300-TH` | 2 model names | — | Temperature and humidity sensor |
-| `EM310-TILT` | 2 model names | — | Three-axis tilt sensor with per-axis thresholds |
-| `EM400-MUD` | 2 model names | — | mmWave distance/level sensor with temperature |
-| `EM400-TLD` | 2 model names | — | ToF laser distance/level sensor with temperature |
-| `EM500-PP` | 2 model names | — | Pipe pressure sensor |
-| `EM500-UDL` | 2 model names | — | Ultrasonic distance/level sensor |
-| `GS301` | 1 model | — | Odour/gas sensor (NH3, H2S) |
-| `VS132` | 2 model names | — | 3D ToF people counter |
-| `WS101` | 1 model | — | Smart button |
-| `WS201` | 1 model | — | Smart fill-level sensor |
-| `WS301` | 1 model | — | Magnetic contact / door sensor |
-| `WS302` | 1 model | — | Sound level sensor |
-| `WS303` | 1 model | — | Spot water-leak sensor |
+```ts
+import { milesight } from 'lorawan-decoders/milesight';
+```
+
+| Model | Name to pass | Accessor | Also answers to | fPort | Description |
+|---|---|---|---|---|---|
+| AM103 | `'am103'` | `milesight.am103` | `AM103L` | — | Temperature, humidity and CO2 sensor (AM103L adds light level) |
+| AM308L | `'am308l'` | `milesight.am308l` | — | — | Indoor air quality sensor (CO2, tVOC, PM, PIR) |
+| EM300-SLD | `'em300-sld'` | `milesight.em300_sld` | `EM300SLD` | — | Temperature, humidity and spot water-leak sensor |
+| EM300-TH | `'em300-th'` | `milesight.em300_th` | `EM300TH` | — | Temperature and humidity sensor |
+| EM310-TILT | `'em310-tilt'` | `milesight.em310_tilt` | `EM310TILT` | — | Three-axis tilt sensor with per-axis thresholds |
+| EM400-MUD | `'em400-mud'` | `milesight.em400_mud` | `EM400MUD` | — | mmWave distance/level sensor with temperature |
+| EM400-TLD | `'em400-tld'` | `milesight.em400_tld` | `EM400TLD` | — | ToF laser distance/level sensor with temperature |
+| EM500-PP | `'em500-pp'` | `milesight.em500_pp` | `EM500PP` | — | Pipe pressure sensor |
+| EM500-UDL | `'em500-udl'` | `milesight.em500_udl` | `EM500UDL` | — | Ultrasonic distance/level sensor |
+| GS301 | `'gs301'` | `milesight.gs301` | — | — | Odour/gas sensor (NH3, H2S) |
+| VS132 | `'vs132'` | `milesight.vs132` | `VS132-P` | — | 3D ToF people counter |
+| WS101 | `'ws101'` | `milesight.ws101` | — | — | Smart button |
+| WS201 | `'ws201'` | `milesight.ws201` | — | — | Smart fill-level sensor |
+| WS301 | `'ws301'` | `milesight.ws301` | — | — | Magnetic contact / door sensor |
+| WS302 | `'ws302'` | `milesight.ws302` | — | — | Sound level sensor |
+| WS303 | `'ws303'` | `milesight.ws303` | — | — | Spot water-leak sensor |
+
+### Telemetry keys
+
+| Model | Keys (unit) |
+|---|---|
+| AM103 | `battery` (%), `temperature` (°C), `humidity` (%), `light_level` (index), `co2` (ppm) |
+| AM308L | `battery` (%), `temperature` (°C), `humidity` (%), `pir`, `light_level` (index), `co2` (ppm), `tvoc_index` (index), `tvoc` (µg/m³), `barometric_pressure` (hPa), `pm2_5` (µg/m³), `pm10` (µg/m³), `buzzer_status` |
+| EM300-SLD | `battery` (%), `temperature` (°C), `humidity` (%), `leakage_status` |
+| EM300-TH | `battery` (%), `temperature` (°C), `humidity` (%) |
+| EM310-TILT | `battery` (%), `angle_x` (°), `angle_y` (°), `angle_z` (°), `angle_threshold_x`, `angle_threshold_y`, `angle_threshold_z` |
+| EM400-MUD | `battery` (%), `temperature` (°C), `distance` (mm), `position`, `temperature_alarm`, `distance_alarm` |
+| EM400-TLD | `battery` (%), `temperature` (°C), `distance` (mm), `position`, `temperature_alarm`, `distance_alarm` |
+| EM500-PP | `battery` (%), `pressure` (kPa) |
+| EM500-UDL | `battery` (%), `distance` (mm), `distance_alarm_value` (mm), `distance_mutation` (mm), `distance_alarm` |
+| GS301 | `battery` (%), `temperature` (°C), `humidity` (%), `nh3` (ppm), `nh3_status`, `h2s` (ppm), `h2s_status`, `calibration_result` |
+| VS132 | `total_counter_in` (count), `total_counter_out` (count), `periodic_counter_in` (count), `periodic_counter_out` (count) |
+| WS101 | `battery` (%), `button_event` |
+| WS201 | `battery` (%), `distance` (mm), `remaining` (%) |
+| WS301 | `battery` (%), `magnet_status`, `tamper_status` |
+| WS302 | `battery` (%), `sound_level` (dB), `sound_level_eq` (dB), `sound_level_max` (dB) |
+| WS303 | `battery` (%), `leakage_status` |
 
 _Source: Milesight public payload documentation (github.com/Milesight-IoT/SensorDecoders READMEs). Implemented clean-room from the documented channel tables; no vendor code reused._
 
-### Netvox
+## Netvox
 
-| Decoder | Covers | fPort | Description |
-|---|---|---|---|
-| `R718N1` | 17 model names | 6 | Single-phase current meter (all CT ratings, ±detachable cables) |
-| `R718N3` | 33 model names | 6 | Three-phase current meter (all CT ratings, ±detachable cables, ±D revision) |
-| `R718N360` | 1 model | 6 | Three-channel current interface (raw channel values, no battery byte on ReportType 0x02) |
-| `R718NL1` | 17 model names | 6 | Light sensor + single-phase current meter |
-| `R718NL3` | 17 model names | 6 | Light sensor + three-phase current meter |
+```ts
+import { netvox } from 'lorawan-decoders/netvox';
+```
+
+| Model | Name to pass | Accessor | Also answers to | fPort | Description |
+|---|---|---|---|---|---|
+| R718N1 | `'r718n1'` | `netvox.r718n1` | `R718N1`, `R718N1E`, `R718N13` … (16 names) | 6 | Single-phase current meter (all CT ratings, ±detachable cables) |
+| R718N3 | `'r718n3'` | `netvox.r718n3` | `R718N3`, `R718N3E`, `R718N3D` … (32 names) | 6 | Three-phase current meter (all CT ratings, ±detachable cables, ±D revision) |
+| R718N360 | `'r718n360'` | `netvox.r718n360` | — | 6 | Three-channel current interface (raw channel values, no battery byte on ReportType 0x02) |
+| R718NL1 | `'r718nl1'` | `netvox.r718nl1` | `R718NL1`, `R718NL1E`, `R718NL13` … (16 names) | 6 | Light sensor + single-phase current meter |
+| R718NL3 | `'r718nl3'` | `netvox.r718nl3` | `R718NL3`, `R718NL3E`, `R718NL33` … (16 names) | 6 | Light sensor + three-phase current meter |
+
+### Telemetry keys
+
+| Model | Keys (unit) |
+|---|---|
+| R718N1 | `battery_voltage` (V), `battery_low`, `current` (mA), `current_alarm` |
+| R718N3 | `battery_voltage` (V), `battery_low`, `current_1` (mA), `current_2` (mA), `current_3` (mA), `current_alarm_1`, `current_alarm_2`, `current_alarm_3` |
+| R718N360 | `battery_voltage` (V), `battery_low`, `channel_1` (raw), `channel_2` (raw), `channel_3` (raw) |
+| R718NL1 | `battery_voltage` (V), `battery_low`, `current` (mA), `current_alarm`, `illuminance` (lx) |
+| R718NL3 | `battery_voltage` (V), `battery_low`, `current_1` (mA), `current_2` (mA), `current_3` (mA), `current_alarm_1`, `current_alarm_2`, `current_alarm_3`, `illuminance` (lx) |
 
 _Source: Netvox product manuals (11-byte NetvoxPayloadData structure) cross-checked against the TTN Device Repository per-device entries. Implemented from the documented byte layout._
 
