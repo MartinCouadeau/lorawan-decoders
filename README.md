@@ -144,7 +144,8 @@ npx lorawan-decode --list netvox
 - **Ellenex**: 8-byte legacy frame or CBOR (V6), detected by shape. Readings
   are raw counts unless you pass the per-device `scaling` profile; without it
   they go on `level_raw` / `pressure_raw`.
-- **Dragino**: LHT65/LHT65N. Byte 6 selects the layout of the external block.
+- **Dragino**: fixed frames per model. LHT65 byte 6 selects the external
+  block; LSN50v2 is decoded in MOD=1 only; LDDS75 distance sentinels warn.
 
 Details: [docs/vendor-quirks.md](docs/vendor-quirks.md).
 
@@ -173,7 +174,7 @@ Each model definition has a `source` field. See [NOTICE.md](NOTICE.md).
 
 ## Status
 
-v0.2. Formats are verified against vendor documentation, not hardware.
+v0.3. Formats are verified against vendor documentation, not hardware.
 Captures from real devices are welcome.
 
 ## Licence
