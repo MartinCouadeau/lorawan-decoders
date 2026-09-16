@@ -3,47 +3,40 @@ import { run, unitOf, valueOf } from '../helpers.js';
 import { decodeCbor, looksLikeCbor } from '../../src/vendors/ellenex/cbor.js';
 import { ellenex } from '../../src/index.js';
 
-/**
- * Legacy vectors are the published TTN test vectors for PTS2-L and PLS2-L.
- * V6 vectors come from the Ellenex V6 codec test data.
- */
+// Legacy vectors: TTN Device Repository entries and ThingPark field captures.
+// V6 vectors: Ellenex V6 codec test data and ThingPark field captures.
 describe('Ellenex legacy 8-byte frame', () => {
-  it('decodes the published negative-reading vector as a raw count', () => {
-    const uplink = run('Ellenex', 'PTS2-L', '01E800FB58000022', { fPort: 15 });
-    expect(uplink.telemetry).toEqual({ pressure_raw: -1192, battery_voltage: 3.4 });
+  it('decodes the published negative-reading vector as kPa', () => {
+    const d = run('Ellenex', 'PTS2-L', '01E800FB58000022', { fPort: 15 });
+    expect(d.telemetry).toEqual({ pressure: -119.2, battery_voltage: 3.4 });
+    expect(unitOf(d, 'pressure')).toBe('kPa');
   });
 
   it('decodes the published positive-reading vector', () => {
-    expect(valueOf(run('Ellenex', 'PTS2-L', '01E80000D6000022'), 'pressure_raw')).toBe(214);
+    expect(valueOf(run('Ellenex', 'PTS2-L', '01E80000D6000022'), 'pressure')).toBe(21.4);
   });
 
   it('treats byte 7 as unsigned — 0xFF is 25.5 V, not -0.1 V', () => {
     expect(valueOf(run('Ellenex', 'PTS2-L', '01E80000D60000FF'), 'battery_voltage')).toBe(25.5);
   });
 
-  it('treats the secondary reading as signed and reports it raw', () => {
-    const uplink = run('Ellenex', 'PTD2-L', '01E80000D6FFFF22');
-    expect(valueOf(uplink, 'temperature_raw')).toBe(-1);
-    expect(uplink.telemetry).not.toHaveProperty('temperature');
-  });
-
-  it('never puts a raw count on the engineering key', () => {
-    const uplink = run('Ellenex', 'PLS2-L', '01E80000D6000022');
-    expect(uplink.telemetry).toEqual({ level_raw: 214, battery_voltage: 3.4 });
-    expect(unitOf(uplink, 'level_raw')).toBe('raw');
-    const warning = uplink.warnings.find((w) => w.code === 'unscaled_value');
-    expect(warning?.message).toContain('raw sensor count');
-  });
-
-  it('produces real units on the engineering key once given a scaling profile', () => {
-    const uplink = run('Ellenex', 'PLS2-L', '01E80000D6000022', {
-      scaling: { profile: 'adc14', range: 10 },
+  it('reads the secondary reading as signed 0.01 °C', () => {
+    expect(run('Ellenex', 'PTD2-L', '01E80000D6FFFF22').telemetry).toEqual({
+      pressure: 21.4, temperature: -0.01, battery_voltage: 3.4,
     });
-    expect(unitOf(uplink, 'level')).toBe('m');
+  });
+
+  it('reports level in metres from the wire millimetres (field capture)', () => {
+    const d = run('Ellenex', 'PLS2-L', '0b1f00064f000022', { fPort: 15 });
+    expect(d.telemetry).toEqual({ level: 1.615, battery_voltage: 3.4 });
+    expect(d.attributes).toEqual({ device_id: '0b1f' });
+    expect(d.warnings).toEqual([]);
+  });
+
+  it('keeps the ADC profiles as an opt-in for count-based sensors', () => {
+    const d = run('Ellenex', 'PLS2-L', '01E80000D6000022', { scaling: { profile: 'adc14', range: 10 } });
     // (214 - 1638.3) * 10 / 13106.4 = -1.087
-    expect(Number(valueOf(uplink, 'level'))).toBeCloseTo(-1.087, 3);
-    expect(uplink.telemetry).not.toHaveProperty('level_raw');
-    expect(uplink.warnings.some((w) => w.code === 'unscaled_value')).toBe(false);
+    expect(Number(valueOf(d, 'level'))).toBeCloseTo(-1.087, 3);
   });
 
   it('applies liquid density on the microamp profile', () => {
@@ -57,23 +50,25 @@ describe('Ellenex legacy 8-byte frame', () => {
       .toThrow(/range/);
   });
 
-  it('surfaces the undocumented header bytes as an attribute, not telemetry', () => {
-    const uplink = run('Ellenex', 'PTS2-L', '01E80000D6000022');
-    expect(uplink.attributes).toEqual({ header: '01e800' });
-    expect(uplink.telemetry).not.toHaveProperty('header');
+  it('keeps configuration echoes out of telemetry (field capture)', () => {
+    const d = run('Ellenex', 'PDS2-L', '1dc216018021', { fPort: 15 });
+    expect(d.telemetry).toEqual({});
+    expect(d.attributes).toEqual({ device_id: '1dc2', data_type: 0x16, data: '018021' });
+    expect(d.warnings[0]?.code).toBe('undocumented_field');
   });
 
-  it('stays quiet on the observed header but warns when byte 0 changes', () => {
-    const normal = run('Ellenex', 'PTS2-L', '01E80000D6000022');
-    expect(normal.warnings.some((w) => w.code === 'undocumented_field')).toBe(false);
-
-    const odd = run('Ellenex', 'PTS2-L', '80E80000D6000022');
-    const warning = odd.warnings.find((w) => w.code === 'undocumented_field');
-    expect(warning?.message).toContain('FMS2-L');
+  it('decodes several packets in one frame and counts them', () => {
+    const d = run('Ellenex', 'PTS2-L', '01E80000D6000022' + '000100006F000023');
+    expect(d.telemetry).toEqual({ pressure: 11.1, battery_voltage: 3.5 });
+    expect(d.attributes).toEqual({ device_id: '01e8', frame_counter: 1, packets: 2 });
+    expect(d.warnings.map((w) => w.code)).toEqual(['duplicate_key', 'duplicate_key']);
   });
 
-  it('rejects a frame that is not 8 bytes and points at the likely cause', () => {
-    expect(() => run('Ellenex', 'PTS2-L', '01E80000D60000')).toThrow(/8 bytes/);
+  it('warns on a short sensor packet instead of throwing', () => {
+    const d = run('Ellenex', 'PTS2-L', '01E80000D60000');
+    expect(d.telemetry).toEqual({});
+    expect(d.warnings[0]?.code).toBe('truncated_payload');
+    expect(() => run('Ellenex', 'PTS2-L', '01E8')).toThrow(/8 bytes/);
   });
 });
 

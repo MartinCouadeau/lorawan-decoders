@@ -4,7 +4,7 @@
 
 ### Added
 
-- Milesight: EM500-CO2, EM500-SWL, EM500-PT100, EM500-LGT, EM500-SMTC,
+- Milesight: EM500-CO2, EM500-SWL, EM500-PT100, EM500-LGT, EM500-SMTC, AM307,
   EM310-UDL, EM320-TH, EM300-MCS, WS202, WS523 (alias WS525), AM104, AM107,
   AM319-HCHO (alias AM319), AM319-O3. `83/d7` temperature alarm with
   `temperature_change` on the EM500 series.
@@ -19,8 +19,20 @@
 
 ### Changed
 
+- Ellenex legacy frames: readings are engineering units on the wire (mbar,
+  mm, 0.01 °C), confirmed on field captures. `pressure`, `level` and
+  `temperature` are emitted directly; `level_raw`, `pressure_raw`,
+  `differential_pressure_raw`, `temperature_raw` are gone. Bytes 0–1 are the
+  device id / frame counter (`attributes.device_id`, `frame_counter`), byte 2
+  the data type; configuration echoes go to attributes with a warning
+  instead of throwing. Multi-packet frames decode every packet.
+- `scaling.profile` on Ellenex is now opt-in; without it the wire unit is
+  converted directly.
 - Milesight `pir` labels are `idle`/`trigger` on every model (WS202 README
   says `normal`/`trigger`).
+- AM307 (alias AM307L) added; AM308 is an alias of AM308L.
+- `test/vendors/captures.test.ts`: production ThingPark uplinks for
+  Milesight, Dragino and Ellenex, the first hardware-verified vectors.
 
 ## 0.2.0
 

@@ -166,6 +166,39 @@ function am308History<K extends 'tvoc' | 'tvoc_index'>(tvocKey: K, tvocDivisor: 
   );
 }
 
+// AM307: AM308L without particulate matter; 16-byte history.
+const AM307 = {
+  '01/75': battery(),
+  '03/67': temperatureC(),
+  '04/68': humidityPct(),
+  '05/00': pir(),
+  '06/cb': lightLevel(),
+  '07/7d': co2Ppm(),
+  '08/7d': numeric({ key: 'tvoc_index', type: 'u16le', unit: Unit.INDEX, divisor: 100, decimals: 2 }),
+  '08/e6': numeric({ key: 'tvoc', type: 'u16le', unit: Unit.MICROGRAM_PER_M3 }),
+  '09/73': barometric(),
+  '0e/01': enumState('buzzer_status', { 0: 'off', 1: 'on' }),
+  '20/ce': am307History('tvoc_index', 100, Unit.INDEX),
+  '21/ce': am307History('tvoc', 1, Unit.MICROGRAM_PER_M3),
+};
+
+function am307History<K extends 'tvoc' | 'tvoc_index'>(tvocKey: K, tvocDivisor: number, tvocUnit: Unit) {
+  type T = TempHumidity & { pir?: string; light_level?: number; co2?: number; barometric_pressure?: number } & { [P in K]?: number };
+  return history<T>(
+    16,
+    { ...TEMP_HUMIDITY_KEYS, pir: null, light_level: Unit.INDEX, co2: Unit.PPM, barometric_pressure: Unit.HECTOPASCAL, [tvocKey]: tvocUnit } as KeySpec<T>,
+    (r, emit) => {
+      emit.reading({ key: 'temperature', unit: Unit.CELSIUS, value: round(r.i16le() / 10, 1) });
+      emit.reading({ key: 'humidity', unit: Unit.PERCENT, value: round(r.u16le() / 2, 1) });
+      emit.reading({ key: 'pir', value: r.u8() === 1 ? 'trigger' : 'idle' });
+      emit.reading({ key: 'light_level', unit: Unit.INDEX, value: r.u8() });
+      emit.reading({ key: 'co2', unit: Unit.PPM, value: r.u16le() });
+      emit.reading({ key: tvocKey, unit: tvocUnit, value: round(r.u16le() / tvocDivisor, 2) });
+      emit.reading({ key: 'barometric_pressure', unit: Unit.HECTOPASCAL, value: round(r.u16le() / 10, 1) });
+    },
+  );
+}
+
 const AM308L = {
   '01/75': battery(),
   '03/67': temperatureC(),
@@ -421,7 +454,8 @@ export const MILESIGHT_MODELS = [
   model('AM103', 'Temperature, humidity and CO2 sensor (AM103L adds light level)', AM103, { aliases: ['AM103L'] }),
   model('AM104', 'Ambience sensor (temperature, humidity, activity, light)', AM104, { attributes: { ...COMMON_ATTRIBUTES, ...SHORT_SERIAL } }),
   model('AM107', 'Ambience sensor (AM104 plus CO2, tVOC, barometric pressure)', AM107, { attributes: { ...COMMON_ATTRIBUTES, ...SHORT_SERIAL } }),
-  model('AM308L', 'Indoor air quality sensor (CO2, tVOC, PM, PIR)', AM308L),
+  model('AM307', 'Indoor air quality sensor (CO2, tVOC, PIR, no particulates)', AM307, { aliases: ['AM307L'] }),
+  model('AM308L', 'Indoor air quality sensor (CO2, tVOC, PM, PIR)', AM308L, { aliases: ['AM308'] }),
   model('AM319-HCHO', 'Indoor air quality sensor with formaldehyde', AM319_HCHO, { aliases: ['AM319', 'AM319HCHO'] }),
   model('AM319-O3', 'Indoor air quality sensor with ozone', AM319_O3, { aliases: ['AM319O3'] }),
   model('GS301', 'Odour/gas sensor (NH3, H2S)', GS301),

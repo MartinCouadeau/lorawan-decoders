@@ -96,7 +96,7 @@ describe('Ellenex scaling and generation edge cases', () => {
     const uplink = run('Ellenex', 'PLS2-L', '01E80000D6000022', {
       scaling: { profile: 'direct', density: 2 },
     });
-    expect(valueOf(uplink, 'level')).toBe(107); // 214 / 2
+    expect(valueOf(uplink, 'level')).toBe(107); // 214 / 2, unscaled by design
   });
 
   it('can be forced to the legacy layout when the bytes look like CBOR', () => {
@@ -133,7 +133,7 @@ describe('Ellenex scaling and generation edge cases', () => {
   });
 
   it('reports the RS1-L primary input as a raw sensor reading', () => {
-    expect(run('Ellenex', 'RS1-L', '01E80000D6000022').telemetry).toMatchObject({ sensor_reading: 214 });
+    expect(run('Ellenex', 'RS1-L', '01E80000D6000022').telemetry).toEqual({ sensor_reading: 214, temperature: 0, battery_voltage: 3.4 });
   });
 });
 

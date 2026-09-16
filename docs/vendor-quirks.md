@@ -91,25 +91,34 @@ revisions (50 A vs 60 A).
 
 ## Ellenex
 
-**Two payload generations.** Legacy: fixed 8 bytes. V6: CBOR map. Detected
-by shape (`0xBF` or `0xA0`–`0xB7` first byte = V6). Override with
-`scaling: { generation: 'legacy' | 'v6' }`.
+**Two payload generations.** Legacy (V4): one or more fixed 8-byte packets.
+V6: CBOR map. Detected by shape (`0xBF` or `0xA0`–`0xB7` first byte = V6).
+Override with `scaling: { generation: 'legacy' | 'v6' }`.
 
-**Bytes 0–2 undocumented.** Observed `01 E8 00`, `01 82 00`. On FMS2-L byte 0
-`0x80` changes the layout. Exposed as `header` attribute; warns when byte 0
-≠ `0x01`.
+**Legacy bytes 0–2.** Bytes 0–1 are the last two bytes of the DevEUI in the
+first packet and a frame counter in later packets → `attributes.device_id`,
+`attributes.frame_counter`. Byte 2 is the data type: `0x00` sensor reading;
+other values are configuration echoes (`0x01` interval, `0x16` auto-reset seen
+in captures) → kept in `attributes.data_type` / `attributes.data` with an
+`undocumented_field` warning, no telemetry. Confirmed on ThingPark captures.
 
-**Readings are raw counts.** Scale depends on sensor range and liquid
-density, supplied per device. Without `scaling` → `level_raw`,
-`pressure_raw`, `differential_pressure_raw`, `temperature_raw`. With
-`scaling: { profile, range, density }` → `level` (m) or `pressure` (kPa);
-pass `range` in that unit. V6 conversions: bar → kPa, Pa → kPa (PDT2-L),
-`D` metres → mm.
+**Legacy readings are engineering units on the wire.** mbar for pressure and
+differential pressure, mm for level, 0.01 °C for temperature. Emitted as
+`pressure` / `differential_pressure` (kPa), `level` (m), `temperature` (°C).
+Confirmed: a PLS2-L sending `0x064F` = 1615 mm alongside V6 frames from the
+same model reading 1.6155 m. Ellenex's own "-1192 bar" sample is the mbar
+vector read with the wrong unit. `scaling: { profile, range, density }`
+remains as an opt-in ADC conversion for 4–20 mA count sensors.
 
-**`v` vs `V` in V6.** `v` = battery mV, `V` = input voltage mV.
+**Multi-packet legacy frames** (length a multiple of 8) decode every packet;
+repeated keys keep the last value with `duplicate_key` warnings and
+`attributes.packets` gives the count.
 
-**Unverified.** Legacy secondary (temperature) scaling: emitted as
-`temperature_raw`. No status/alarm field documented; none invented.
+**V6 conversions.** bar → kPa, Pa → kPa (PDT2-L), `D` metres → mm. `v` =
+battery mV, `V` = input voltage mV.
+
+**Unverified.** Legacy secondary temperature scaling (0.01 °C per the
+platform decoders; no vendor document). No status/alarm field documented.
 
 ## Dragino
 
@@ -150,7 +159,9 @@ fPort 3 datalog records share the layout.
 
 ## Hardware verification
 
-Every format is verified against vendor documentation and published
-examples, not against devices owned by this project. Captures from real
-hardware are the most useful contribution: open an issue with model, hex
-payload, and what the device's own platform showed.
+`test/vendors/captures.test.ts` holds uplinks captured from production
+devices through ThingPark: Milesight EM300-SLD, AM307, AM308, AM308L,
+AM319-HCHO, WS301; Dragino LHT65N; Ellenex PLS2-L, PTS2-L, PDS2-L (legacy
+and V6). Every other format is verified against vendor documentation only.
+More captures are the most useful contribution: open an issue with model,
+hex payload, fPort, and what the device's own platform showed.

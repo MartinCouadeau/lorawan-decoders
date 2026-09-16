@@ -29,20 +29,20 @@ netvox.r718n3('014A0324006400640064 36', { fPort: 6 });
 
 Any rating: `netvox.r718n317`, `netvox.r718n3100e`.
 
-## Per-device scaling (Ellenex)
+## Ellenex, legacy and CBOR
 
 ```ts
 import { ellenex } from 'lorawan-decoders';
 
-ellenex.pls2_l('01E80000D6000022', { fPort: 15 });
-// { level_raw: 214, battery_voltage: 3.4 }
+ellenex.pls2_l('0b1f00064f000022', { fPort: 15 });            // legacy, field capture
+// { level: 1.615, battery_voltage: 3.4 }
 
-ellenex.pls2_l('01E80000D6000022', {
-  fPort: 15,
-  scaling: { profile: 'adc14', range: 10, density: 0.85 },   // 10 m sensor, diesel
-});
-// { level: -1.278, battery_voltage: 3.4 }
+ellenex.pls2_l('BF614CFA3FCEC8C86176190CF8FF', { fPort: 15 }); // V6 CBOR, same model
+// { level: 1.6155, battery_voltage: 3.32 }
 ```
+
+Same keys and units from both generations. Configuration echoes on the
+legacy frame land in `attributes` with a warning, never in telemetry.
 
 ## External probe (Dragino)
 
@@ -152,6 +152,38 @@ async function forward(token: string, vendor: string, model: string, data: strin
     });
   }
 }
+```
+
+## ThingPark HTTP integration
+
+ThingPark posts a `DevEUI_uplink` document. The payload is hex in
+`payload_hex`; radio fields arrive as numbers or, on older releases, as
+strings. The device model is not in the envelope, so map it yourself (a
+`model:` tag in `CustomerData.tags`, or a DevEUI table).
+
+```ts
+app.post('/uplink/thingpark', (req, res) => {
+  const up = req.body.DevEUI_uplink;
+  if (!up?.payload_hex) return res.status(204).end();            // joins, acks
+
+  const tag = (up.CustomerData?.tags ?? []).find((t: string) => t.startsWith('model:'));
+  const model = tag?.slice(6) ?? lookup(up.DevEUI);              // "em300-sld"
+
+  res.json(decode('milesight', model, up.payload_hex, { fPort: Number(up.FPort), detailed: true }));
+});
+```
+
+A real EM300-SLD event, trimmed:
+
+```json
+{ "DevEUI_uplink": { "Time": "2024-12-04T19:55:56.328+00:00", "DevEUI": "A84041…",
+    "FPort": 2, "payload_hex": "03671001046871050001", "LrrRSSI": -105.2, "LrrSNR": -0.75,
+    "CustomerData": { "tags": ["model:em300-sld", "ct:…"] } } }
+```
+
+```json
+{ "telemetry": { "temperature": 27.2, "humidity": 56.5, "leakage_status": "leak" },
+  "units": { "temperature": "°C", "humidity": "%" }, "history": [], "attributes": {}, "warnings": [] }
 ```
 
 ## The Things Stack webhook

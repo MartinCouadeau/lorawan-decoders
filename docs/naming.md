@@ -60,7 +60,6 @@ telemetry; it is in `attributes` with `detailed: true`.
 | `current_alarm_3` | — (state/event) | Netvox |
 | `daylight` | — (state/event) | Milesight |
 | `differential_pressure` | kPa | Ellenex |
-| `differential_pressure_raw` | raw | Ellenex |
 | `distance` | mm | Dragino, Ellenex, Milesight |
 | `distance_alarm` | — (state/event) | Milesight |
 | `distance_alarm_value` | mm | Milesight |
@@ -79,7 +78,6 @@ telemetry; it is in `attributes` with `detailed: true`.
 | `interrupt` | — (state/event) | Dragino |
 | `leakage_status` | — (state/event) | Dragino, Milesight |
 | `level` | m | Ellenex, Milesight |
-| `level_raw` | raw | Ellenex |
 | `light_level` | index | Milesight |
 | `magnet_status` | — (state/event) | Dragino, Milesight |
 | `nh3` | ppm | Milesight |
@@ -95,7 +93,6 @@ telemetry; it is in `attributes` with `detailed: true`.
 | `position` | — (state/event) | Milesight |
 | `power_factor` | % | Milesight |
 | `pressure` | kPa | Ellenex, Milesight |
-| `pressure_raw` | raw | Ellenex |
 | `pulse_count` | count | Dragino, Ellenex |
 | `remaining` | % | Milesight |
 | `sensor_reading` | raw | Ellenex |
@@ -110,7 +107,6 @@ telemetry; it is in `attributes` with `detailed: true`.
 | `temperature_alarm` | — (state/event) | Milesight |
 | `temperature_change` | °C | Milesight |
 | `temperature_external` | °C | Dragino |
-| `temperature_raw` | raw | Ellenex |
 | `total_counter_in` | count | Milesight |
 | `total_counter_out` | count | Milesight |
 | `tvoc` | µg/m³ | Milesight |

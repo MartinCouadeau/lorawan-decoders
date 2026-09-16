@@ -15,7 +15,6 @@ export const VOCABULARY: Record<string, Unit | null> = {
   // --- environment -----------------------------------------------------------
   temperature: Unit.CELSIUS,
   temperature_external: Unit.CELSIUS,
-  temperature_raw: Unit.RAW,
   temperature_change: Unit.CELSIUS,
   temperature_alarm: null,
   humidity: Unit.PERCENT,
@@ -51,12 +50,9 @@ export const VOCABULARY: Record<string, Unit | null> = {
   distance_alarm_value: Unit.MILLIMETRE,
   distance_mutation: Unit.MILLIMETRE,
   level: Unit.METRE,
-  level_raw: Unit.RAW,
   remaining: Unit.PERCENT,
   pressure: Unit.KILOPASCAL,
-  pressure_raw: Unit.RAW,
   differential_pressure: Unit.KILOPASCAL,
-  differential_pressure_raw: Unit.RAW,
 
   // --- electrical ------------------------------------------------------------
   current: Unit.MILLIAMPERE,

@@ -67,7 +67,7 @@ String = hex unless `encoding: 'base64'`. Hex accepts spaces, `:`, `,`, `-`,
 
 | Vendor | Key | Meaning |
 |---|---|---|
-| Ellenex | `profile` | `'adc14'`, `'microamp'`, `'direct'`. Without it readings go on `<key>_raw`. |
+| Ellenex | `profile` | Opt-in ADC conversion: `'adc14'`, `'microamp'`, `'direct'`. Not needed for the standard pressure/level models. |
 | Ellenex | `range` | Full-scale range in the output unit (m or kPa). Required by `adc14`, `microamp`. |
 | Ellenex | `density` | Relative to water, default 1. Also applied to V6 `level`. |
 | Ellenex | `generation` | `'legacy'` or `'v6'`, overrides detection. |

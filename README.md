@@ -7,7 +7,7 @@ for every vendor. Milesight, Netvox, Ellenex, Dragino.
 ![TypeScript](https://img.shields.io/badge/TypeScript-strict-blue)
 ![License](https://img.shields.io/badge/license-MIT-green)
 
-54 decoders, 170 model names, 4 vendors. Written from public vendor
+55 decoders, 173 model names, 4 vendors. Written from public vendor
 documentation; no vendor code copied. See [Provenance](#provenance-and-licensing).
 
 ```ts
@@ -92,18 +92,16 @@ Plain call: `Record<string, number | string | boolean>`, readings only.
 `{ detailed: true }`:
 
 ```ts
-ellenex.pls2_l('01E80000D6000022', { fPort: 15, detailed: true });
+ellenex.pts2_l('01E80000D6000022', { fPort: 15, detailed: true });
 ```
 
 ```jsonc
 {
-  "telemetry":  { "level_raw": 214, "battery_voltage": 3.4 },
-  "units":      { "level_raw": "raw", "battery_voltage": "V" },
+  "telemetry":  { "pressure": 21.4, "battery_voltage": 3.4 },
+  "units":      { "pressure": "kPa", "battery_voltage": "V" },
   "history":    [],
-  "attributes": { "header": "01e800" },
-  "warnings": [
-    { "code": "unscaled_value", "message": "level is a raw sensor count, reported on level_raw; …" }
-  ]
+  "attributes": { "device_id": "01e8" },
+  "warnings":   []
 }
 ```
 
@@ -112,7 +110,7 @@ ellenex.pls2_l('01E80000D6000022', { fPort: 15, detailed: true });
 | `units` | Unit per numeric key. States and events absent. |
 | `history` | Buffered records replayed by the device, one per device timestamp, oldest first. Never merged into `telemetry`. |
 | `attributes` | Device metadata: firmware, serial, multipliers, header bytes. |
-| `warnings` | Why something is missing or unscaled. Plain call is silent; `strict: true` throws instead. |
+| `warnings` | Why something is missing or unscaled (`unknown_channel`, `sensor_fault`, …). Plain call is silent; `strict: true` throws instead. |
 
 ## Naming
 
@@ -141,9 +139,9 @@ npx lorawan-decode --list netvox
 - **Netvox**: fixed 11-byte frame. Clamp-rating suffixes share one decoder
   (`R718N1` … `R718N1100E`). Three-phase ReportType 0x01 cannot carry all
   multipliers; pass them via `scaling`.
-- **Ellenex**: 8-byte legacy frame or CBOR (V6), detected by shape. Readings
-  are raw counts unless you pass the per-device `scaling` profile; without it
-  they go on `level_raw` / `pressure_raw`.
+- **Ellenex**: 8-byte legacy frame or CBOR (V6), detected by shape. Legacy
+  readings are mbar/mm on the wire and come out as kPa/m; `scaling.profile`
+  is an opt-in ADC conversion for count-based sensors.
 - **Dragino**: fixed frames per model. LHT65 byte 6 selects the external
   block; LSN50v2 is decoded in MOD=1 only; LDDS75 distance sentinels warn.
 
@@ -174,8 +172,10 @@ Each model definition has a `source` field. See [NOTICE.md](NOTICE.md).
 
 ## Status
 
-v0.3. Formats are verified against vendor documentation, not hardware.
-Captures from real devices are welcome.
+v0.3. Milesight EM300-SLD, AM307/AM308/AM308L, AM319-HCHO, WS301, Dragino
+LHT65N and Ellenex PLS2-L/PTS2-L/PDS2-L are verified against production
+captures (`test/vendors/captures.test.ts`). Everything else is verified
+against vendor documentation only. More captures are welcome.
 
 ## Licence
 
