@@ -2,12 +2,11 @@ import { describe, expect, it } from 'vitest';
 import { run } from '../helpers.js';
 
 /**
- * Uplinks captured from production devices through ThingPark (DevEUI_uplink
- * payload_hex and FPort). Expected values are what the platform's own decoders
- * reported for the same frames. These are the only hardware-verified vectors
- * in the suite.
+ * Reference uplinks recorded from real hardware: payload and fPort only, no
+ * device identifiers. Expected values were cross-checked against an
+ * independent decoder. These are the hardware-verified vectors in the suite.
  */
-describe('field captures: Milesight', () => {
+describe('hardware vectors: Milesight', () => {
   it('EM300-SLD live and buffered frames', () => {
     expect(run('Milesight', 'EM300-SLD', '03671001046871050001', { fPort: 2 }).telemetry)
       .toEqual({ temperature: 27.2, humidity: 56.5, leakage_status: 'leak' });
@@ -51,7 +50,7 @@ describe('field captures: Milesight', () => {
 
   it('CT103 total and instantaneous current', () => {
     expect(run('Milesight', 'CT103', '039707a61b000498e506', { fPort: 85 }).telemetry)
-      .toEqual({ total_current: 18119.75, current: 17650 });        // platform showed 17.65 A
+      .toEqual({ total_current: 18119.75, current: 17650 });        // 17.65 A
   });
 
   it('VS351 status and counter frames', () => {
@@ -68,7 +67,7 @@ describe('field captures: Milesight', () => {
   });
 });
 
-describe('field captures: Dragino', () => {
+describe('hardware vectors: Dragino', () => {
   it('LHT65N with a configured but absent probe', () => {
     const d = run('Dragino', 'LHT65N', 'CBA40ABB025C017FFF7FFF', { fPort: 2 });
     expect(d.telemetry).toEqual({
@@ -84,7 +83,7 @@ describe('field captures: Dragino', () => {
   });
 });
 
-describe('field captures: Ellenex', () => {
+describe('hardware vectors: Ellenex', () => {
   it('V6 PLS2-L, PTS2-L and PDS2-L', () => {
     expect(run('Ellenex', 'PLS2-L', 'BF614CFA3FCEC8C86176190CF8FF', { fPort: 15 }).telemetry)
       .toEqual({ level: 1.6155, battery_voltage: 3.32 });
@@ -95,16 +94,16 @@ describe('field captures: Ellenex', () => {
   });
 
   it('legacy PTS2-L, PLS2-L and PDS2-L carry engineering units on the wire', () => {
-    expect(run('Ellenex', 'PTS2-L', '0b1f000002000023', { fPort: 15 }).telemetry)
+    expect(run('Ellenex', 'PTS2-L', '0a01000002000023', { fPort: 15 }).telemetry)
       .toEqual({ pressure: 0.2, battery_voltage: 3.5 });
-    expect(run('Ellenex', 'PLS2-L', '0b1f00064f000022', { fPort: 15 }).telemetry)
+    expect(run('Ellenex', 'PLS2-L', '0a0100064f000022', { fPort: 15 }).telemetry)
       .toEqual({ level: 1.615, battery_voltage: 3.4 });
-    expect(run('Ellenex', 'PDS2-L', '1d4700015c000022', { fPort: 15 }).telemetry)
+    expect(run('Ellenex', 'PDS2-L', '0a0200015c000022', { fPort: 15 }).telemetry)
       .toEqual({ differential_pressure: 34.8, battery_voltage: 3.4 });
   });
 
   it('legacy configuration echoes', () => {
-    for (const hex of ['1dc216018021', '1d830101007822', '1d8301100100785d']) {
+    for (const hex of ['0a0316018021', '0a040101007822', '0a0401100100785d']) {
       const d = run('Ellenex', 'PDS2-L', hex, { fPort: 15 });
       expect(d.telemetry).toEqual({});
       expect(d.attributes['data_type']).toBeGreaterThan(0);
@@ -113,7 +112,7 @@ describe('field captures: Ellenex', () => {
   });
 });
 
-describe('field captures: Netvox', () => {
+describe('hardware vectors: Netvox', () => {
   it('RA02A data report with the low-battery bit set', () => {
     expect(run('Netvox', 'RA02A', '010A019F00000104000000', { fPort: 6 }).telemetry).toEqual({
       battery_voltage: 3.1, battery_low: true, fire_alarm: 'none', temperature_alarm: 'none', temperature: 26,

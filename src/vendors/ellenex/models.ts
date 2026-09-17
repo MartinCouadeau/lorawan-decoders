@@ -6,7 +6,7 @@ import { V6_KEYS, decodeV6, type V6Options } from './v6.js';
 
 const SOURCE =
   'Ellenex public payload decoders (github.com/ellenex/lorawan-payload-decoders), the Apache-2.0 TTN ' +
-  'Device Repository codecs, and field captures from ThingPark. Implemented from the documented layout; ' +
+  'Device Repository codecs, and hardware test vectors. Implemented from the documented layout; ' +
   'no vendor code reused (their repo carries no licence).';
 
 /** V6 maps are self-describing, so every model may emit any V6 key. */
