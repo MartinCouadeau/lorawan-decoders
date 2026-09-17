@@ -134,18 +134,16 @@ describe('Milesight EM310-TILT', () => {
 });
 
 describe('Milesight EM500 series', () => {
-  it('EM500-PP reports signed, unscaled kilopascals', () => {
+  it('EM500-PP reports unsigned kilopascals per the user guide', () => {
     const uplink = run('Milesight', 'EM500-PP', '017564037B0A00');
     expect(valueOf(uplink, 'pressure')).toBe(10);
     expect(unitOf(uplink, 'pressure')).toBe('kPa');
-    expect(valueOf(run('Milesight', 'EM500-PP', '037bf6ff'), 'pressure')).toBe(-10);
+    expect(valueOf(run('Milesight', 'EM500-PP', '037bf6ff'), 'pressure')).toBe(65526);
   });
 
-  it('EM500-UDL keeps the alarm-channel distance on its own key and warns about the vendor factor of ten', () => {
+  it('EM500-UDL alarm channel is millimetres per the user guide, with a warning about the vendor factor of ten', () => {
     const uplink = run('Milesight', 'EM500-UDL', '83e9' + '6400' + '0a00' + '01');
-    expect(uplink.telemetry).toEqual({
-      distance_alarm_value: 10, distance_mutation: 1, distance_alarm: 'threshold_alarm',
-    });
+    expect(uplink.telemetry).toEqual({ distance: 100, distance_change: 10, distance_alarm: 'threshold_alarm' });
     expect(uplink.warnings.some((w) => w.code === 'vendor_quirk')).toBe(true);
   });
 
@@ -237,10 +235,11 @@ describe('Milesight GS301', () => {
   it('reports sensor sentinels as a status rather than a concentration of 65534', () => {
     const warming = run('Milesight', 'GS301', '047dfeff');
     expect(warming.telemetry).toEqual({ nh3_status: 'polarizing' });
-    expect(warming.warnings.some((w) => w.code === 'sensor_fault')).toBe(true);
+    expect(warming.warnings).toEqual([]);                       // warm-up is a state, not a fault
 
     const broken = run('Milesight', 'GS301', '057dffff');
-    expect(valueOf(broken, 'h2s_status')).toBe('device_error');
+    expect(valueOf(broken, 'h2s_status')).toBe('collection_failed');
+    expect(broken.warnings.some((w) => w.code === 'sensor_fault')).toBe(true);
   });
 
   it('decodes the high-resolution H2S channel at 1/1000 ppm onto the same key', () => {

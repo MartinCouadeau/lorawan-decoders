@@ -30,13 +30,13 @@ import { dragino } from 'lorawan-decoders/dragino';
 
 | Model | Keys (unit) |
 |---|---|
-| LDDS75 | `battery_voltage` (V), `distance` (mm), `interrupt`, `temperature` (°C) |
-| LDS02 | `battery_voltage` (V), `magnet_status`, `open_count` (count), `open_duration` (min), `alarm` |
-| LHT52 | `temperature` (°C), `humidity` (%), `temperature_external` (°C) |
-| LHT65 | `battery_voltage` (V), `battery_status`, `temperature` (°C), `temperature_external` (°C), `humidity` (%), `input_level`, `interrupt`, `illuminance` (lx), `input_voltage` (V), `pulse_count` (count) |
+| LDDS75 | `battery_voltage` (V), `distance` (mm), `distance_status`, `interrupt`, `temperature` (°C), `temperature_status` |
+| LDS02 | `battery_voltage` (V), `magnet_status`, `open_count` (count), `open_duration` (min), `alarm`, `event_count` (count) |
+| LHT52 | `temperature` (°C), `humidity` (%), `temperature_external` (°C), `temperature_external_status` |
+| LHT65 | `battery_voltage` (V), `battery_status`, `temperature` (°C), `temperature_external` (°C), `temperature_external_status`, `humidity` (%), `humidity_external` (%), `input_level`, `interrupt`, `illuminance` (lx), `input_voltage` (V), `pulse_count` (count) |
 | LSE01 | `battery_voltage` (V), `soil_moisture` (%), `soil_temperature` (°C), `conductivity` (µS/cm), `interrupt` |
-| LSN50V2 | `battery_voltage` (V), `temperature` (°C), `humidity` (%), `temperature_external` (°C), `input_voltage` (V), `input_level`, `interrupt` |
-| LWL02 | `battery_voltage` (V), `leakage_status`, `open_count` (count), `open_duration` (min), `alarm` |
+| LSN50V2 | `battery_voltage` (V), `temperature` (°C), `temperature_status`, `humidity` (%), `humidity_status`, `temperature_external` (°C), `temperature_external_status`, `input_voltage` (V), `input_level`, `interrupt` |
+| LWL02 | `battery_voltage` (V), `leakage_status`, `open_count` (count), `open_duration` (min), `alarm`, `event_count` (count) |
 
 _Source: Dragino user manuals (wiki.dragino.com) and the Apache-2.0 TTN Device Repository entries. Implemented from the documented byte layout; no vendor code reused._
 
@@ -135,18 +135,18 @@ import { milesight } from 'lorawan-decoders/milesight';
 | EM300-SLD | `battery` (%), `temperature` (°C), `humidity` (%), `leakage_status` |
 | EM300-TH | `battery` (%), `temperature` (°C), `humidity` (%) |
 | EM310-TILT | `battery` (%), `angle_x` (°), `angle_y` (°), `angle_z` (°), `angle_threshold_x`, `angle_threshold_y`, `angle_threshold_z` |
-| EM310-UDL | `battery` (%), `distance` (mm), `position` |
+| EM310-UDL | `battery` (%), `distance` (mm), `distance_status`, `position` |
 | EM320-TH | `battery` (%), `temperature` (°C), `humidity` (%) |
-| EM400-MUD | `battery` (%), `temperature` (°C), `distance` (mm), `position`, `temperature_alarm`, `distance_alarm` |
-| EM400-TLD | `battery` (%), `temperature` (°C), `distance` (mm), `position`, `temperature_alarm`, `distance_alarm` |
-| EM500-CO2 | `battery` (%), `temperature` (°C), `humidity` (%), `co2` (ppm), `barometric_pressure` (hPa), `temperature_change` (°C), `temperature_alarm` |
-| EM500-LGT | `battery` (%), `illuminance` (lx) |
-| EM500-PP | `battery` (%), `pressure` (kPa) |
-| EM500-PT100 | `battery` (%), `temperature` (°C), `temperature_change` (°C), `temperature_alarm` |
-| EM500-SMTC | `battery` (%), `temperature` (°C), `soil_moisture` (%), `conductivity` (µS/cm), `temperature_change` (°C), `temperature_alarm` |
-| EM500-SWL | `battery` (%), `level` (m) |
-| EM500-UDL | `battery` (%), `distance` (mm), `distance_alarm_value` (mm), `distance_mutation` (mm), `distance_alarm` |
-| GS301 | `battery` (%), `temperature` (°C), `humidity` (%), `nh3` (ppm), `nh3_status`, `h2s` (ppm), `h2s_status`, `calibration_result` |
+| EM400-MUD | `battery` (%), `temperature` (°C), `distance` (mm), `distance_status`, `position`, `temperature_alarm`, `distance_alarm` |
+| EM400-TLD | `battery` (%), `temperature` (°C), `distance` (mm), `distance_status`, `position`, `temperature_alarm`, `distance_alarm` |
+| EM500-CO2 | `battery` (%), `temperature` (°C), `temperature_status`, `humidity` (%), `humidity_status`, `co2` (ppm), `co2_status`, `barometric_pressure` (hPa), `barometric_pressure_status`, `temperature_change` (°C), `temperature_alarm` |
+| EM500-LGT | `battery` (%), `illuminance` (lx), `illuminance_status` |
+| EM500-PP | `battery` (%), `pressure` (kPa), `pressure_status` |
+| EM500-PT100 | `battery` (%), `temperature` (°C), `temperature_status`, `temperature_change` (°C), `temperature_alarm` |
+| EM500-SMTC | `battery` (%), `temperature` (°C), `temperature_status`, `soil_moisture` (%), `soil_moisture_status`, `conductivity` (µS/cm), `conductivity_status`, `temperature_change` (°C), `temperature_alarm` |
+| EM500-SWL | `battery` (%), `level` (m), `level_status` |
+| EM500-UDL | `battery` (%), `distance` (mm), `distance_status`, `distance_change` (mm), `distance_alarm` |
+| GS301 | `battery` (%), `temperature` (°C), `temperature_status`, `humidity` (%), `humidity_status`, `nh3` (ppm), `nh3_status`, `h2s` (ppm), `h2s_status`, `calibration_result` |
 | VS132 | `total_counter_in` (count), `total_counter_out` (count), `periodic_counter_in` (count), `periodic_counter_out` (count) |
 | WS101 | `battery` (%), `button_event` |
 | WS201 | `battery` (%), `distance` (mm), `remaining` (%) |

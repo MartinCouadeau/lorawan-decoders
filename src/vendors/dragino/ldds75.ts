@@ -13,12 +13,15 @@ import { Unit } from '../../core/units.js';
 export interface Ldds75Telemetry {
   battery_voltage?: number;
   distance?: number;
+  distance_status?: string;
   interrupt?: string;
   temperature?: number;
+  temperature_status?: string;
 }
 
 export const LDDS75_KEYS = {
-  battery_voltage: Unit.VOLT, distance: Unit.MILLIMETRE, interrupt: null, temperature: Unit.CELSIUS,
+  battery_voltage: Unit.VOLT, distance: Unit.MILLIMETRE, distance_status: null, interrupt: null,
+  temperature: Unit.CELSIUS, temperature_status: null,
 } as const;
 
 const NO_SENSOR = 0x0000;
@@ -38,9 +41,12 @@ export function decodeLdds75(bytes: Uint8Array, ctx: DecodeContext): DecodeResul
   if (r.remaining < 2) return { readings, attributes };
   const distance = r.u16be();
   if (distance === NO_SENSOR) {
+    // Ultrasonic module missing or unwired: a fault.
     ctx.warn({ code: 'sensor_fault', offset: 2, message: 'distance 0x0000: no ultrasonic sensor detected' });
+    readings.push({ key: 'distance_status', value: 'not_detected' });
   } else if (distance === BELOW_MINIMUM) {
-    ctx.warn({ code: 'sensor_fault', offset: 2, message: 'distance 0x0014: object closer than the 280 mm minimum' });
+    // Object inside the 280 mm blind zone: the device reports this on purpose.
+    readings.push({ key: 'distance_status', value: 'below_minimum' });
   } else {
     readings.push({ key: 'distance', unit: Unit.MILLIMETRE, value: distance });
   }
@@ -51,7 +57,7 @@ export function decodeLdds75(bytes: Uint8Array, ctx: DecodeContext): DecodeResul
   if (r.remaining >= 2) {
     const raw = r.u16be();
     if (raw === PROBE_ABSENT) {
-      ctx.warn({ code: 'sensor_fault', offset: 5, message: 'DS18B20 probe absent (0x7FFF)' });
+      readings.push({ key: 'temperature_status', value: 'not_connected' });
     } else {
       readings.push({ key: 'temperature', unit: Unit.CELSIUS, value: round(toInt16(raw) / 10, 1) });
     }

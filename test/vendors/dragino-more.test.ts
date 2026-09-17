@@ -46,16 +46,18 @@ describe('Dragino LDDS75', () => {
     expect(valueOf(run('Dragino', 'LDDS75', '0B45 0B05 00 FF3F 01'), 'temperature')).toBe(-19.3);
   });
 
-  it('treats 0x0000 and 0x0014 distance as sensor faults, not readings', () => {
+  it('0x0000 is a missing sensor (fault); 0x0014 is the blind zone and 0x7FFF an absent probe (states)', () => {
     const none = run('Dragino', 'LDDS75', '0B45 0000 00 7FFF 00');
-    expect(none.telemetry).not.toHaveProperty('distance');
-    expect(none.telemetry).not.toHaveProperty('temperature');
-    expect(none.warnings.map((w) => w.code)).toEqual(['sensor_fault', 'sensor_fault']);
+    expect(none.telemetry).toEqual({
+      battery_voltage: 2.885, distance_status: 'not_detected', interrupt: 'none', temperature_status: 'not_connected',
+    });
+    expect(none.warnings.map((w) => w.code)).toEqual(['sensor_fault']);
     expect(none.attributes['ultrasonic_sensor']).toBe('missing');
 
     const near = run('Dragino', 'LDDS75', '0B45 0014 01 7FFF 01');
     expect(near.telemetry).not.toHaveProperty('distance');
-    expect(near.warnings[0]?.message).toContain('280 mm');
+    expect(valueOf(near, 'distance_status')).toBe('below_minimum');
+    expect(near.warnings).toEqual([]);
     expect(valueOf(near, 'interrupt')).toBe('triggered');
   });
 
@@ -72,7 +74,7 @@ describe('Dragino LSE01', () => {
     expect(d.telemetry).toEqual({
       battery_voltage: 2.885, soil_moisture: 15, soil_temperature: 2.61, conductivity: 200, interrupt: 'none',
     });
-    expect(d.attributes).toEqual({ reserved: '0000' });
+    expect(d.attributes).toEqual({ reserved: '0000', mode: 0 });
   });
 
   it('decodes a negative soil temperature as two\'s complement', () => {
@@ -84,7 +86,8 @@ describe('Dragino LSE01', () => {
 describe('Dragino LHT52', () => {
   it('decodes the manual example', () => {
     const d = run('Dragino', 'LHT52', '08CD 0220 7FFF 01 61CD4EDD', { fPort: 2 });
-    expect(d.telemetry).toEqual({ temperature: 22.53, humidity: 54.4 });
+    expect(d.telemetry).toEqual({ temperature: 22.53, humidity: 54.4, temperature_external_status: 'not_connected' });
+    expect(d.warnings).toEqual([]);
     expect(d.attributes).toEqual({ external_sensor: 'ds18b20', device_time: '2021-12-30T06:17:01.000Z' });
   });
 
@@ -106,7 +109,11 @@ describe('Dragino LSN50v2', () => {
 
   it('reads the byte-6 flags', () => {
     const d = run('Dragino', 'LSN50', '0B45 7FFF 0000 83 7FFF 7FFF');
-    expect(d.telemetry).toEqual({ battery_voltage: 2.885, input_voltage: 0, interrupt: 'triggered', input_level: 'high' });
+    expect(d.telemetry).toEqual({
+      battery_voltage: 2.885, temperature_external_status: 'not_connected', input_voltage: 0, interrupt: 'triggered', input_level: 'high',
+      temperature_status: 'not_connected', humidity_status: 'not_connected',
+    });
+    expect(d.warnings).toEqual([]);
     expect(d.attributes['interrupt_pin']).toBe('high');
   });
 

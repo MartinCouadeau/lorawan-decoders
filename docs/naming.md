@@ -18,6 +18,12 @@ Every decoder emits the same keys with the same units.
    else.
 5. States and events are strings. Booleans only for two-valued flags
    (`battery_low`). Wire codes are not exposed.
+6. `<key>_status` is valid for every numeric key without being listed. A
+   decoder emits it instead of `<key>` when the device sends a sentinel.
+   Faults (`collection_failed`, `not_detected`: the device could not
+   measure) also raise a `sensor_fault` warning. States (`out_of_range`,
+   `below_minimum`, `polarizing`, `tilted`, `not_connected`: the device
+   reports a condition on purpose) do not. See docs/vendor-quirks.md.
 
 Device metadata (firmware, serial, multipliers, header bytes) is not
 telemetry; it is in `attributes` with `detailed: true`.
@@ -62,14 +68,14 @@ telemetry; it is in `attributes` with `detailed: true`.
 | `differential_pressure` | kPa | Ellenex |
 | `distance` | mm | Dragino, Ellenex, Milesight |
 | `distance_alarm` | — (state/event) | Milesight |
-| `distance_alarm_value` | mm | Milesight |
-| `distance_mutation` | mm | Milesight |
+| `distance_change` | mm | Milesight |
 | `dry_contact` | — (state/event) | Ellenex |
 | `energy` | kWh | Milesight |
+| `event_count` | count | Dragino |
 | `h2s` | ppm | Milesight |
-| `h2s_status` | — (state/event) | Milesight |
 | `hcho` | mg/m³ | Milesight |
 | `humidity` | % | Dragino, Milesight |
+| `humidity_external` | % | Dragino |
 | `illuminance` | lx | Dragino, Milesight, Netvox |
 | `illuminance_ir` | lx | Milesight |
 | `illuminance_ir_visible` | lx | Milesight |
@@ -81,7 +87,6 @@ telemetry; it is in `attributes` with `detailed: true`.
 | `light_level` | index | Milesight |
 | `magnet_status` | — (state/event) | Dragino, Milesight |
 | `nh3` | ppm | Milesight |
-| `nh3_status` | — (state/event) | Milesight |
 | `o3` | ppm | Milesight |
 | `open_count` | count | Dragino |
 | `open_duration` | min | Dragino |

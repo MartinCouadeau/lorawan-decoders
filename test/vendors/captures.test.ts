@@ -58,8 +58,10 @@ describe('field captures: Milesight', () => {
 describe('field captures: Dragino', () => {
   it('LHT65N with a configured but absent probe', () => {
     const d = run('Dragino', 'LHT65N', 'CBA40ABB025C017FFF7FFF', { fPort: 2 });
-    expect(d.telemetry).toEqual({ battery_voltage: 2.98, battery_status: 'good', temperature: 27.47, humidity: 60.4 });
-    expect(d.warnings.map((w) => w.code)).toEqual(['sensor_fault']);
+    expect(d.telemetry).toEqual({
+      battery_voltage: 2.98, battery_status: 'good', temperature: 27.47, humidity: 60.4, temperature_external_status: 'not_connected',
+    });
+    expect(d.warnings).toEqual([]);
   });
 
   it('LHT65N below zero on both sensors', () => {

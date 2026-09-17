@@ -17,16 +17,19 @@ export const LSN50_FRAME_LENGTH = 11;
 export interface Lsn50Telemetry {
   battery_voltage?: number;
   temperature?: number;
+  temperature_status?: string;
   humidity?: number;
+  humidity_status?: string;
   temperature_external?: number;
+  temperature_external_status?: string;
   input_voltage?: number;
   input_level?: string;
   interrupt?: string;
 }
 
 export const LSN50_KEYS = {
-  battery_voltage: Unit.VOLT, temperature: Unit.CELSIUS, humidity: Unit.PERCENT,
-  temperature_external: Unit.CELSIUS, input_voltage: Unit.VOLT, input_level: null, interrupt: null,
+  battery_voltage: Unit.VOLT, temperature: Unit.CELSIUS, temperature_status: null, humidity: Unit.PERCENT, humidity_status: null,
+  temperature_external: Unit.CELSIUS, temperature_external_status: null, input_voltage: Unit.VOLT, input_level: null, interrupt: null,
 } as const;
 
 const ABSENT = 0x7fff;
@@ -57,9 +60,9 @@ export function decodeLsn50(bytes: Uint8Array, ctx: DecodeContext): DecodeResult
     return { readings, attributes };
   }
 
-  if (ds !== ABSENT) {
-    readings.push({ key: 'temperature_external', unit: Unit.CELSIUS, value: round(toInt16(ds) / 10, 1) });
-  }
+  // 0x7FFF = sensor not connected. Device state, no warning.
+  if (ds === ABSENT) readings.push({ key: 'temperature_external_status', value: 'not_connected' });
+  else readings.push({ key: 'temperature_external', unit: Unit.CELSIUS, value: round(toInt16(ds) / 10, 1) });
   readings.push({ key: 'input_voltage', unit: Unit.VOLT, value: round(adc / 1000, 3) });
   readings.push({ key: 'interrupt', value: flags & 0x01 ? 'triggered' : 'none' });
   readings.push({ key: 'input_level', value: flags & 0x02 ? 'high' : 'low' });
@@ -67,15 +70,13 @@ export function decodeLsn50(bytes: Uint8Array, ctx: DecodeContext): DecodeResult
 
   if (r.remaining >= 2) {
     const t = r.u16be();
-    if (t !== ABSENT) {
-      readings.push({ key: 'temperature', unit: Unit.CELSIUS, value: round(toInt16(t) / 10, 1) });
-    }
+    if (t === ABSENT) readings.push({ key: 'temperature_status', value: 'not_connected' });
+    else readings.push({ key: 'temperature', unit: Unit.CELSIUS, value: round(toInt16(t) / 10, 1) });
   }
   if (r.remaining >= 2) {
     const h = r.u16be();
-    if (h !== ABSENT) {
-      readings.push({ key: 'humidity', unit: Unit.PERCENT, value: round(h / 10, 1) });
-    }
+    if (h === ABSENT) readings.push({ key: 'humidity_status', value: 'not_connected' });
+    else readings.push({ key: 'humidity', unit: Unit.PERCENT, value: round(h / 10, 1) });
   }
 
   return { readings, attributes };

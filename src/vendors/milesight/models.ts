@@ -1,10 +1,11 @@
 import { round } from '../../core/reader.js';
-import type { KeySpec, ModelDefinition } from '../../core/types.js';
+import type { DecodeResult, KeySpec, ModelDefinition } from '../../core/types.js';
 import { Unit } from '../../core/units.js';
 import { COMMON_ATTRIBUTES, SHORT_SERIAL, VS_ATTRIBUTES } from './attributes.js';
 import {
+  EM310_DISTANCE_SENTINELS, EM400_DISTANCE_SENTINELS, EM500_SENTINELS, EM500_SENTINELS_32, FAILED_16, FAILED_8,
   GAS_SENTINELS, alarmDistance, alarmTemperature, barometric, battery, co2Ppm, distanceMm, enumState,
-  history, humidityPct, illuminationTriple, lightLevel, mergeChannels, numeric, pir, soundLevels, struct,
+  history, humidityPct, illuminationTriple, lightLevel, mergeChannels, numeric, pir, readNumber, soundLevels, struct,
   temperatureAlarmChange, temperatureC, tiltAngles, udlDistanceAlarm,
 } from './channels.js';
 import { decodeTlv, keysOf, type ChannelMap, type TelemetryOf } from './tlv.js';
@@ -17,7 +18,7 @@ function model<M extends ChannelMap, N extends string, A extends string = never>
   name: N,
   description: string,
   channels: M,
-  opts: { aliases?: readonly A[]; attributes?: ChannelMap } = {},
+  opts: { aliases?: readonly A[]; attributes?: ChannelMap; finish?: (result: DecodeResult) => void } = {},
 ): ModelDefinition<TelemetryOf<M>, N | A> {
   const map = mergeChannels(opts.attributes ?? COMMON_ATTRIBUTES, channels);
   return {
@@ -27,15 +28,29 @@ function model<M extends ChannelMap, N extends string, A extends string = never>
     source: SOURCE,
     keys: keysOf(map) as KeySpec<TelemetryOf<M>>,
     ...(opts.aliases ? { aliases: opts.aliases } : {}),
-    decode: (bytes, ctx) => decodeTlv(bytes, map, ctx),
+    decode: (bytes, ctx) => {
+      const result = decodeTlv(bytes, map, ctx);
+      opts.finish?.(result);
+      return result;
+    },
   };
 }
 
+/** EM400: distance 65000 in a frame that also says `position: tilt` is the tilt switch turning the sensor off, not a range miss. */
+function relabelTiltedDistance(result: DecodeResult): void {
+  const tilted = result.readings.some((m) => m.key === 'position' && m.value === 'tilt');
+  if (!tilted) return;
+  for (const m of result.readings) {
+    if (m.key === 'distance_status' && m.value === 'out_of_range') m.value = 'tilted';
+  }
+}
+
 // --- EM400 series: TLD (ToF) and MUD (mmWave) share one map ------------------
+// Distance 65000 = out of range or device tilted (field report).
 const EM400 = {
   '01/75': battery(),
   '03/67': temperatureC(),
-  '04/82': distanceMm(),
+  '04/82': distanceMm(EM400_DISTANCE_SENTINELS),
   '05/00': enumState('position', { 0: 'normal', 1: 'tilt' }),
   '83/67': alarmTemperature(),
   '84/82': alarmDistance(),
@@ -115,21 +130,23 @@ const AM103 = {
 };
 
 // --- EM500 series ------------------------------------------------------------
+// EM500 user guides: 0xffff = collection failed, 0xfffd = out of range, on
+// live and history fields alike (EM500_SENTINELS).
 const EM500_UDL = {
   '01/75': battery(),
-  '03/82': distanceMm(),
+  '03/82': distanceMm(EM500_SENTINELS),
   '83/e9': udlDistanceAlarm(),
-  '20/ce': history<{ distance?: number }>(6, { distance: Unit.MILLIMETRE }, (r, emit) => {
-    emit.reading({ key: 'distance', unit: Unit.MILLIMETRE, value: r.u16le() });
+  '20/ce': history<{ distance?: number; distance_status?: string }>(6, { distance: Unit.MILLIMETRE, distance_status: null }, (r, emit) => {
+    readNumber(r, emit, { key: 'distance', type: 'u16le', unit: Unit.MILLIMETRE, sentinels: EM500_SENTINELS });
   }),
 };
 
-// Signed kPa, no divisor (vendor example 037b0a00 → 10 kPa).
+// UINT16 kPa per the user guide (vendor example 037b0a00 → 10 kPa).
 const EM500_PP = {
   '01/75': battery(),
-  '03/7b': numeric({ key: 'pressure', type: 'i16le', unit: Unit.KILOPASCAL }),
-  '20/ce': history<{ pressure?: number }>(6, { pressure: Unit.KILOPASCAL }, (r, emit) => {
-    emit.reading({ key: 'pressure', unit: Unit.KILOPASCAL, value: r.i16le() });
+  '03/7b': numeric({ key: 'pressure', type: 'u16le', unit: Unit.KILOPASCAL, sentinels: EM500_SENTINELS }),
+  '20/ce': history<{ pressure?: number; pressure_status?: string }>(6, { pressure: Unit.KILOPASCAL, pressure_status: null }, (r, emit) => {
+    readNumber(r, emit, { key: 'pressure', type: 'u16le', unit: Unit.KILOPASCAL, sentinels: EM500_SENTINELS });
   }),
 };
 
@@ -217,10 +234,11 @@ const AM308L = {
 };
 
 // --- GS301: ids shifted down one vs AM308L; h2s at two resolutions, one key --
+// User guide: "ffff or ff = collection error, fffe = polarizing" on every channel.
 const GS301 = {
   '01/75': battery(),
-  '02/67': temperatureC(),
-  '03/68': humidityPct(),
+  '02/67': temperatureC(FAILED_16),
+  '03/68': humidityPct(FAILED_8),
   '04/7d': numeric({ key: 'nh3', type: 'u16le', unit: Unit.PPM, divisor: 100, decimals: 2, sentinels: GAS_SENTINELS }),
   '05/7d': numeric({ key: 'h2s', type: 'u16le', unit: Unit.PPM, divisor: 100, decimals: 2, sentinels: GAS_SENTINELS }),
   '06/7d': numeric({ key: 'h2s', type: 'u16le', unit: Unit.PPM, divisor: 1000, decimals: 3, sentinels: GAS_SENTINELS }),
@@ -256,21 +274,29 @@ const VS132 = {
 };
 
 // --- EM500 series, more ------------------------------------------------------
+// EM500-CO2 guide documents only "all ff" (no out-of-range code).
+type Em500Co2History = TempHumidity & {
+  temperature_status?: string; humidity_status?: string;
+  co2?: number; co2_status?: string; barometric_pressure?: number; barometric_pressure_status?: string;
+};
 const EM500_CO2 = {
   '01/75': battery(),
-  '03/67': temperatureC(),
-  '04/68': humidityPct(),
-  '05/7d': co2Ppm(),
-  '06/73': barometric(),
+  '03/67': temperatureC(FAILED_16),
+  '04/68': humidityPct(FAILED_8),
+  '05/7d': co2Ppm(FAILED_16),
+  '06/73': barometric(FAILED_16),
   '83/d7': temperatureAlarmChange(),
-  '20/ce': history<TempHumidity & { co2?: number; barometric_pressure?: number }>(
+  '20/ce': history<Em500Co2History>(
     11,
-    { ...TEMP_HUMIDITY_KEYS, co2: Unit.PPM, barometric_pressure: Unit.HECTOPASCAL },
+    {
+      ...TEMP_HUMIDITY_KEYS, temperature_status: null, humidity_status: null,
+      co2: Unit.PPM, co2_status: null, barometric_pressure: Unit.HECTOPASCAL, barometric_pressure_status: null,
+    },
     (r, emit) => {
-      emit.reading({ key: 'co2', unit: Unit.PPM, value: r.u16le() });
-      emit.reading({ key: 'barometric_pressure', unit: Unit.HECTOPASCAL, value: round(r.u16le() / 10, 1) });
-      emit.reading({ key: 'temperature', unit: Unit.CELSIUS, value: round(r.i16le() / 10, 1) });
-      emit.reading({ key: 'humidity', unit: Unit.PERCENT, value: round(r.u8() / 2, 1) });
+      readNumber(r, emit, { key: 'co2', type: 'u16le', unit: Unit.PPM, sentinels: FAILED_16 });
+      readNumber(r, emit, { key: 'barometric_pressure', type: 'u16le', unit: Unit.HECTOPASCAL, divisor: 10, decimals: 1, sentinels: FAILED_16 });
+      readNumber(r, emit, { key: 'temperature', type: 'i16le', unit: Unit.CELSIUS, divisor: 10, decimals: 1, sentinels: FAILED_16 });
+      readNumber(r, emit, { key: 'humidity', type: 'u8', unit: Unit.PERCENT, divisor: 2, decimals: 1, sentinels: FAILED_8 });
     },
   ),
 };
@@ -278,51 +304,61 @@ const EM500_CO2 = {
 // Depth on the wire is centimetres; the vocabulary `level` is metres.
 const EM500_SWL = {
   '01/75': battery(),
-  '03/77': numeric({ key: 'level', type: 'u16le', unit: Unit.METRE, divisor: 100, decimals: 2 }),
-  '20/ce': history<{ level?: number }>(6, { level: Unit.METRE }, (r, emit) => {
-    emit.reading({ key: 'level', unit: Unit.METRE, value: round(r.u16le() / 100, 2) });
+  '03/77': numeric({ key: 'level', type: 'u16le', unit: Unit.METRE, divisor: 100, decimals: 2, sentinels: EM500_SENTINELS }),
+  '20/ce': history<{ level?: number; level_status?: string }>(6, { level: Unit.METRE, level_status: null }, (r, emit) => {
+    readNumber(r, emit, { key: 'level', type: 'u16le', unit: Unit.METRE, divisor: 100, decimals: 2, sentinels: EM500_SENTINELS });
   }),
 };
 
 const EM500_PT100 = {
   '01/75': battery(),
-  '03/67': temperatureC(),
+  '03/67': temperatureC(EM500_SENTINELS),
   '83/d7': temperatureAlarmChange(),
-  '20/ce': history<{ temperature?: number }>(6, { temperature: Unit.CELSIUS }, (r, emit) => {
-    emit.reading({ key: 'temperature', unit: Unit.CELSIUS, value: round(r.i16le() / 10, 1) });
+  '20/ce': history<{ temperature?: number; temperature_status?: string }>(6, { temperature: Unit.CELSIUS, temperature_status: null }, (r, emit) => {
+    readNumber(r, emit, { key: 'temperature', type: 'i16le', unit: Unit.CELSIUS, divisor: 10, decimals: 1, sentinels: EM500_SENTINELS });
   }),
 };
 
 const EM500_LGT = {
   '01/75': battery(),
-  '03/94': numeric({ key: 'illuminance', type: 'u32le', unit: Unit.LUX }),
-  '20/ce': history<{ illuminance?: number }>(8, { illuminance: Unit.LUX }, (r, emit) => {
-    emit.reading({ key: 'illuminance', unit: Unit.LUX, value: r.u32le() });
+  '03/94': numeric({ key: 'illuminance', type: 'u32le', unit: Unit.LUX, sentinels: EM500_SENTINELS_32 }),
+  '20/ce': history<{ illuminance?: number; illuminance_status?: string }>(8, { illuminance: Unit.LUX, illuminance_status: null }, (r, emit) => {
+    readNumber(r, emit, { key: 'illuminance', type: 'u32le', unit: Unit.LUX, sentinels: EM500_SENTINELS_32 });
   }),
 };
 
 // Moisture: 1 byte /2 on 04/68, 2 bytes /100 on 04/ca and in history.
+type Em500SmtcHistory = {
+  conductivity?: number; conductivity_status?: string;
+  temperature?: number; temperature_status?: string;
+  soil_moisture?: number; soil_moisture_status?: string;
+};
 const EM500_SMTC = {
   '01/75': battery(),
-  '03/67': temperatureC(),
-  '04/68': numeric({ key: 'soil_moisture', type: 'u8', unit: Unit.PERCENT, divisor: 2, decimals: 1 }),
-  '04/ca': numeric({ key: 'soil_moisture', type: 'u16le', unit: Unit.PERCENT, divisor: 100, decimals: 2 }),
-  '05/7f': numeric({ key: 'conductivity', type: 'u16le', unit: Unit.MICROSIEMENS_PER_CM }),
+  '03/67': temperatureC(EM500_SENTINELS),
+  '04/68': numeric({ key: 'soil_moisture', type: 'u8', unit: Unit.PERCENT, divisor: 2, decimals: 1, sentinels: FAILED_8 }),
+  '04/ca': numeric({ key: 'soil_moisture', type: 'u16le', unit: Unit.PERCENT, divisor: 100, decimals: 2, sentinels: EM500_SENTINELS }),
+  '05/7f': numeric({ key: 'conductivity', type: 'u16le', unit: Unit.MICROSIEMENS_PER_CM, sentinels: EM500_SENTINELS }),
   '83/d7': temperatureAlarmChange(),
-  '20/ce': history<{ conductivity?: number; temperature?: number; soil_moisture?: number }>(
+  '20/ce': history<Em500SmtcHistory>(
     10,
-    { conductivity: Unit.MICROSIEMENS_PER_CM, temperature: Unit.CELSIUS, soil_moisture: Unit.PERCENT },
+    {
+      conductivity: Unit.MICROSIEMENS_PER_CM, conductivity_status: null,
+      temperature: Unit.CELSIUS, temperature_status: null,
+      soil_moisture: Unit.PERCENT, soil_moisture_status: null,
+    },
     (r, emit) => {
-      emit.reading({ key: 'conductivity', unit: Unit.MICROSIEMENS_PER_CM, value: r.u16le() });
-      emit.reading({ key: 'temperature', unit: Unit.CELSIUS, value: round(r.i16le() / 10, 1) });
-      emit.reading({ key: 'soil_moisture', unit: Unit.PERCENT, value: round(r.u16le() / 100, 2) });
+      readNumber(r, emit, { key: 'conductivity', type: 'u16le', unit: Unit.MICROSIEMENS_PER_CM, sentinels: EM500_SENTINELS });
+      readNumber(r, emit, { key: 'temperature', type: 'i16le', unit: Unit.CELSIUS, divisor: 10, decimals: 1, sentinels: EM500_SENTINELS });
+      readNumber(r, emit, { key: 'soil_moisture', type: 'u16le', unit: Unit.PERCENT, divisor: 100, decimals: 2, sentinels: EM500_SENTINELS });
     },
   ),
 };
 
+// User guide: <= 30 mm reported as 30; >= 4.5 m reported as 0.
 const EM310_UDL = {
   '01/75': battery(),
-  '03/82': distanceMm(),
+  '03/82': distanceMm(EM310_DISTANCE_SENTINELS),
   '04/00': enumState('position', { 0: 'normal', 1: 'tilt' }),
 };
 
@@ -429,8 +465,8 @@ const AM319_O3 = {
 };
 
 export const MILESIGHT_MODELS = [
-  model('EM400-TLD', 'ToF laser distance/level sensor with temperature', EM400, { aliases: ['EM400TLD'] }),
-  model('EM400-MUD', 'mmWave distance/level sensor with temperature', EM400, { aliases: ['EM400MUD'] }),
+  model('EM400-TLD', 'ToF laser distance/level sensor with temperature', EM400, { aliases: ['EM400TLD'], finish: relabelTiltedDistance }),
+  model('EM400-MUD', 'mmWave distance/level sensor with temperature', EM400, { aliases: ['EM400MUD'], finish: relabelTiltedDistance }),
   model('EM300-SLD', 'Temperature, humidity and spot water-leak sensor', EM300_SLD, { aliases: ['EM300SLD'] }),
   model('EM300-TH', 'Temperature and humidity sensor', EM300_TH, { aliases: ['EM300TH'] }),
   model('EM310-TILT', 'Three-axis tilt sensor with per-axis thresholds', EM310_TILT, { aliases: ['EM310TILT'] }),

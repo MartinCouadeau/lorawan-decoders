@@ -23,10 +23,40 @@ humidity).
 `08/e6` µg/m³ → `tvoc`. GS301 H2S: `05/7d` 0.01 ppm and `06/7d` 0.001 ppm,
 both → `h2s`.
 
-**EM500-UDL alarm channel.** `83/e9` divides distance by 10 in the vendor
-decoder; `03/82` does not. No unit or example documented. Emitted as
-`distance_alarm_value` with a `vendor_quirk` warning. Unverified against
-hardware.
+**Sentinel values.** A wire pattern the vendor documents as "no reading"
+never becomes a number. The decoder emits `<key>_status` instead of `<key>`.
+Two kinds. **Fault** (`collection_failed`, `not_detected`): the device could
+not measure; also a `sensor_fault` warning, so `strict` throws. **State**
+(`out_of_range`, `below_minimum`, `polarizing`, `tilted`, `not_connected`):
+the device measured and reports a condition on purpose; status only, no
+warning. Matched on the unsigned pattern, so `0xffff` on an int16 field is a
+sentinel, not −0.1. Live channels, alarm channels and history records alike.
+
+| Models | Field | Pattern | Status | Kind |
+|---|---|---|---|---|
+| EM500-UDL, SWL, PT100, PP, SMTC | 2-byte sensor fields | `ffff` | `collection_failed` | fault |
+| same | same | `fffd` | `out_of_range` | state |
+| EM500-LGT | 4-byte illuminance | `ffffffff` / `fffffffd` | same as above | fault / state |
+| EM500-SMTC, EM500-CO2 | 1-byte humidity/moisture | `ff` | `collection_failed` | fault |
+| EM500-CO2 | 2-byte fields | `ffff` | `collection_failed` (guide documents no out-of-range code) | fault |
+| GS301 | gas, temperature | `ffff` | `collection_failed` | fault |
+| GS301 | gas | `fffe` | `polarizing` (sensor warm-up) | state |
+| GS301 | humidity | `ff` | `collection_failed` | fault |
+| EM400-TLD, EM400-MUD | distance | `65000` | `tilted` when the same frame has `position: tilt` (tilt switch turned the sensor off), else `out_of_range`. Field report, not in vendor docs. | state |
+| EM310-UDL | distance | `0` | `out_of_range` (≥ 4.5 m). ≤ 30 mm is clamped to 30 and reported as a value. | state |
+
+Sources: EM500 user guides ("fails to collect → all ffff; outside the
+measuring range → fffd"), GS301 user guide ("ffff or ff = collection error,
+fffe = polarizing"), EM310-UDL user guide. Cost of the PT100/SMTC/CO2 rule: a
+real −0.1 °C (`ffff`) or −0.3 °C (`fffd`) reading is reported as a status.
+Vendor code checks the same patterns on SMTC and SWL.
+
+**EM500-PP pressure** is UINT16 kPa per the user guide, not signed.
+
+**EM500-UDL alarm channel.** `83/e9`: distance mm, change since last report
+mm, alarm byte, per the user guide. The vendor decoder divides both by 10.
+Guide wins; emitted as `distance`, `distance_change`, `distance_alarm` with a
+`vendor_quirk` warning until a capture settles it.
 
 **Hardcoded bytes in the vendor decoder.** `ff/fe` (reset) and `ff/0b`
 (status) are decoded as the literal 1 in vendor code. This library reads the
@@ -37,7 +67,7 @@ This library reads 8.
 
 **WS302 key names.** Vendor decoder renames outputs by weighting (`LAF`,
 `LZS`…). This library uses `sound_level`, `sound_level_eq`, `sound_level_max`
-and puts the weighting in attributes.
+and puts the weighting in attributes. Levels are INT16/10 per the user guide.
 
 **WS101 `msgid`** is random in the vendor decoder, not wire data. Not
 emitted.
@@ -87,7 +117,8 @@ cables (none). `L` = light sensor, different DeviceType and a lux field.
 
 **Unverified.** `R718NL36` appears in the wild but not in Netvox sources
 (manual lists `R718NL363`). Base three-phase CT rating differs between manual
-revisions (50 A vs 60 A).
+revisions (50 A vs 60 A). The manuals document no sentinel or error value
+in the current fields.
 
 ## Ellenex
 
@@ -118,44 +149,69 @@ repeated keys keep the last value with `duplicate_key` warnings and
 battery mV, `V` = input voltage mV.
 
 **Unverified.** Legacy secondary temperature scaling (0.01 °C per the
-platform decoders; no vendor document). No status/alarm field documented.
+platform decoders; no vendor document). No status, alarm or sentinel value
+is documented for either generation.
 
 ## Dragino
 
 **Battery word.** Bits 15–14 status (`ultra_low`, `low`, `ok`, `good`), bits
 13–0 mV. → `battery_voltage`, `battery_status`.
 
-**Byte 6 selects the external layout.** `0x01` DS18B20 →
-`temperature_external`; `0x04` interrupt → `input_level`, `interrupt`;
-`0x05` → `illuminance`; `0x06` ADC → `input_voltage` (V); `0x07`/`0x08` →
-`pulse_count`. Bit 7 = configured but disconnected: no external reading, a
-`sensor_fault` warning. DS18B20 `0x7FFF` is never emitted as a temperature.
+**Sentinels.** `0x7FFF` on any probe field (LHT65/LHT65N, LHT52, LDDS75,
+LSN50v2 DS18B20, SHT temperature and humidity) = nothing attached →
+`<key>_status: not_connected`, no warning: the device is telling you its
+configuration, not failing. LDDS75 distance `0x0000` = ultrasonic module
+not detected → `distance_status: not_detected` plus `sensor_fault`;
+`0x0014` = object inside the 280 mm blind zone → `below_minimum`, no warning.
 
-**Unverified.** Only `0x01` has a vendor example. `LHT65N` is an alias of
-`LHT65`; same documented frame.
+**Byte 6: low nibble = external type, high nibble = status flags.** Types:
+`0x01` DS18B20 and `0x02` TMP117 → `temperature_external`; `0x04` interrupt
+→ `input_level`, `interrupt`; `0x05` → `illuminance`; `0x06` ADC →
+`input_voltage` (V); `0x07`/`0x08`/`0x0E` → `pulse_count`; `0x0B` SHT31 →
+`temperature_external`, `humidity_external`. The LHT65N manual writes the
+last three as 0x10/0x11 but the nibble holds decimal 10/11. Flags (bit 7
+no-ACK resend, bit 6 poll reply, bit 5 time synced, bit 4 time request) →
+attributes when set; a set bit 7 no longer suppresses the external reading.
+Probe `0x7FFF` → `temperature_external_status: not_connected`, never a
+temperature.
+
+**LHT65N timestamp layout.** Types `0x09`/`0x0A` (E3/E2 probe with unix
+time) and every fPort 3 datalog entry use a different 11-byte frame:
+external value, SHT temperature, battery status (2 bits) + humidity (12
+bits), status & type, unix time. On fPort 2 it is reported live with
+`attributes.device_time`; on fPort 3 each entry goes to `history`, all-zero
+entries ("no data in range") are skipped, `attributes.datalog_entries`
+counts them. No battery voltage in this layout.
+
+**Unverified.** Only `0x01` and the fPort 3 example have vendor vectors.
+`LHT65N` is an alias of `LHT65`; same documented frame.
 
 **LDS02 / LWL02.** Bytes 0–1: bit 15 door open (LDS02), bit 14 leak (LWL02),
 bits 13–0 mV. Byte 2 MOD (1 door, 2 leak) → `attributes.mode`. Counts and
 durations are uint24; duration in minutes → `open_count`, `open_duration` on
-both models. Byte 9 bit 0 → `alarm`.
+both models. Byte 9 bit 0 → `alarm`. A 5-byte frame (fPort 7) is the EDC
+event-count packet: bit 15 = which event is counted → `attributes.edc_event`,
+uint24 → `event_count`.
 
-**LDDS75 distance sentinels.** `0x0000` = no ultrasonic sensor, `0x0014` =
-object closer than 280 mm. Both warn `sensor_fault`; `distance` is absent.
-Frames before firmware 1.1.4 are 4 bytes. Byte 7 → `attributes.ultrasonic_sensor`.
+**LDDS75 distance sentinels.** See Sentinels above. Frames before firmware
+1.1.4 are 4 bytes. Byte 7 → `attributes.ultrasonic_sensor`.
 
 **LSE01 bytes 2–3.** The manual marks the DS18B20 field "reserve, ignore now";
 exposed as `attributes.reserved`. The manual's negative-temperature example
 subtracts 0xFFFF; this library uses two's complement (0xFF7E → −1.30, not
-−1.29).
+−1.29). Byte 10 bit 7 is MOD (firmware ≥ 1.2.1): MOD=1 sends raw AD values
+(conductivity, moisture, dielectric constant) → attributes with an
+`unscaled_value` warning, no soil telemetry. `attributes.mode` always.
 
 **LSN50v2 modes.** Byte 6 bits 2–6 hold MOD−1 (TTN Device Repository decoder
 convention). Only MOD=1 is decoded; other modes emit battery only with an
 `undocumented_field` warning. Bit 0 → `interrupt`, bit 1 (PA12) →
 `input_level`, bit 7 (PB14) → `attributes.interrupt_pin`. SHT and DS18B20
-`0x7FFF` = absent.
+`0x7FFF` → `<key>_status: not_connected`.
 
 **LHT52** sends its sample time in bytes 7–10 → `attributes.device_time`.
-fPort 3 datalog records share the layout.
+fPort 3 datalog entries reorder the fields (external temperature, humidity,
+SHT temperature, type, time) and go to `history`; all-zero entries skipped.
 
 ## Hardware verification
 

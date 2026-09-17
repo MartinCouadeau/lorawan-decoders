@@ -112,6 +112,12 @@ ellenex.pts2_l('01E80000D6000022', { fPort: 15, detailed: true });
 | `attributes` | Device metadata: firmware, serial, multipliers, header bytes. |
 | `warnings` | Why something is missing or unscaled (`unknown_channel`, `sensor_fault`, …). Plain call is silent; `strict: true` throws instead. |
 
+A documented "no reading" value (Milesight `0xffff`, EM400 `65000`, Dragino
+`0x7fff`…) never becomes a number: the key is absent and `<key>_status` says
+why. A fault (`collection_failed`, `not_detected`) also warns `sensor_fault`;
+an intended state (`out_of_range`, `tilted`, `not_connected`, `polarizing`,
+`below_minimum`) is data, no warning. Per-model list in docs/vendor-quirks.md.
+
 ## Naming
 
 Rules in [docs/naming.md](docs/naming.md), enforced by tests:
@@ -142,8 +148,9 @@ npx lorawan-decode --list netvox
 - **Ellenex**: 8-byte legacy frame or CBOR (V6), detected by shape. Legacy
   readings are mbar/mm on the wire and come out as kPa/m; `scaling.profile`
   is an opt-in ADC conversion for count-based sensors.
-- **Dragino**: fixed frames per model. LHT65 byte 6 selects the external
-  block; LSN50v2 is decoded in MOD=1 only; LDDS75 distance sentinels warn.
+- **Dragino**: fixed frames per model. LHT65 byte 6 low nibble selects the
+  external block, fPort 3 datalog goes to history; LSN50v2 is decoded in
+  MOD=1 only; `0x7FFF` probes report `not_connected`.
 
 Details: [docs/vendor-quirks.md](docs/vendor-quirks.md).
 

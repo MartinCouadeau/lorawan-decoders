@@ -3,6 +3,7 @@ import type {
   Attributes, DecodeContext, DecodeResult, KeySpec, Reading, Telemetry, TelemetryValue,
 } from '../../core/types.js';
 import type { Unit } from '../../core/units.js';
+import { isFaultStatus } from '../../core/vocabulary.js';
 
 /**
  * Milesight frames: repeated `[channel_id, channel_type, data…]`, no length
@@ -14,7 +15,7 @@ import type { Unit } from '../../core/units.js';
 export interface ChannelEmit {
   reading(r: Reading): void;
   attribute(key: string, value: string | number | boolean): void;
-  warn(code: 'sensor_fault' | 'vendor_quirk' | 'undocumented_field', message: string): void;
+  warn(code: 'sensor_fault' | 'vendor_quirk' | 'undocumented_field' | 'unscaled_value', message: string): void;
   channel: string;
 }
 
@@ -123,57 +124,74 @@ export function keysOf(map: ChannelMap): Record<string, Unit | null> {
 
 // --- Channel builders ---------------------------------------------------------
 
-type IntType = 'u8' | 'i8' | 'u16le' | 'i16le' | 'u32le' | 'i32le';
+export type IntType = 'u8' | 'i8' | 'u16le' | 'i16le' | 'u32le' | 'i32le';
 
 const WIDTH: Record<IntType, number> = {
   u8: 1, i8: 1, u16le: 2, i16le: 2, u32le: 4, i32le: 4,
 };
 
-function readInt(r: ByteReader, type: IntType): number {
+/** Reads one integer. `unsigned` is the wire pattern (for sentinel matching), `value` the signed interpretation. */
+function readRaw(r: ByteReader, type: IntType): { unsigned: number; value: number } {
   switch (type) {
-    case 'u8': return r.u8();
-    case 'i8': return r.i8();
-    case 'u16le': return r.u16le();
-    case 'i16le': return r.i16le();
-    case 'u32le': return r.u32le();
-    case 'i32le': return r.i32le();
+    case 'u8': { const u = r.u8(); return { unsigned: u, value: u }; }
+    case 'i8': { const u = r.u8(); return { unsigned: u, value: u > 0x7f ? u - 0x100 : u }; }
+    case 'u16le': { const u = r.u16le(); return { unsigned: u, value: u }; }
+    case 'i16le': { const u = r.u16le(); return { unsigned: u, value: u > 0x7fff ? u - 0x10000 : u }; }
+    case 'u32le': { const u = r.u32le(); return { unsigned: u, value: u }; }
+    case 'i32le': { const u = r.u32le(); return { unsigned: u, value: u > 0x7fffffff ? u - 0x100000000 : u }; }
   }
 }
 
-export interface NumericOptions<K extends string> {
+/** Wire patterns that mean "no reading" → label on `<key>_status`. Fault labels also warn (vocabulary FAULT_STATUS). */
+export type Sentinels = Record<number, string>;
+
+export interface NumberField<K extends string = string> {
   key: K;
   type: IntType;
   unit: Unit;
   /** Wire value is divided by this. */
   divisor?: number;
   decimals?: number;
-  /** Raw values meaning "no reading" → label on `<key>_status`, plus a sensor_fault warning. */
-  sentinels?: Record<number, string>;
+  sentinels?: Sentinels;
 }
+
+/**
+ * Reads one numeric field and emits it, or its sentinel status. Sentinels are
+ * matched on the unsigned wire pattern, so 0xFFFF on an int16 field is caught
+ * before it becomes -1. Fault labels warn; state labels do not. Shared by
+ * `numeric()` and the struct/history readers.
+ */
+export function readNumber(r: ByteReader, emit: Pick<ChannelEmit, 'reading' | 'warn'>, field: NumberField): void {
+  const { key, type, unit, divisor = 1, decimals = divisor === 1 ? 0 : 2, sentinels } = field;
+  const { unsigned, value } = readRaw(r, type);
+  const sentinel = sentinels?.[unsigned];
+  if (sentinel !== undefined) {
+    if (isFaultStatus(sentinel)) {
+      emit.warn('sensor_fault', `${key}: device reported 0x${unsigned.toString(16)} (${sentinel}); no reading`);
+    }
+    emit.reading({ key: `${key}_status`, value: sentinel });
+    return;
+  }
+  emit.reading({ key, unit, value: round(value / divisor, decimals) });
+}
+
+export type NumericOptions<K extends string> = NumberField<K>;
 
 type NumericT<K extends string> = { [P in K]?: number };
 type StatusT<K extends string> = { [P in `${K}_status`]?: string };
 
 export function numeric<K extends string>(
-  opts: NumericOptions<K> & { sentinels: Record<number, string> },
+  opts: NumericOptions<K> & { sentinels: Sentinels },
 ): ChannelSpec<NumericT<K> & StatusT<K>>;
 export function numeric<K extends string>(opts: NumericOptions<K>): ChannelSpec<NumericT<K>>;
 export function numeric<K extends string>(opts: NumericOptions<K>): ChannelSpec<Telemetry> {
-  const { key, type, unit, divisor = 1, decimals = divisor === 1 ? 0 : 2, sentinels } = opts;
-  const keys: Record<string, Unit | null> = { [key]: unit };
-  if (sentinels) keys[`${key}_status`] = null;
+  const keys: Record<string, Unit | null> = { [opts.key]: opts.unit };
+  if (opts.sentinels) keys[`${opts.key}_status`] = null;
   return {
-    length: WIDTH[type],
+    length: WIDTH[opts.type],
     keys,
     read(r, emit) {
-      const raw = readInt(r, type);
-      const sentinel = sentinels?.[raw];
-      if (sentinel !== undefined) {
-        emit.warn('sensor_fault', `${key}: device reported sentinel 0x${raw.toString(16)} (${sentinel})`);
-        emit.reading({ key: `${key}_status`, value: sentinel });
-        return;
-      }
-      emit.reading({ key, unit, value: round(raw / divisor, decimals) });
+      readNumber(r, emit, opts);
     },
   };
 }

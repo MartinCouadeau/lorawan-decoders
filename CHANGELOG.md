@@ -31,6 +31,24 @@
 - Milesight `pir` labels are `idle`/`trigger` on every model (WS202 README
   says `normal`/`trigger`).
 - AM307 (alias AM307L) added; AM308 is an alias of AM308L.
+- Sentinel audit against every vendor user guide. `<key>_status` replaces
+  `<key>` when a device reports a documented "no reading" pattern, matched
+  on the wire pattern so int16 `0xffff` is a sentinel, not −0.1. Faults
+  (`collection_failed`, `not_detected`) warn `sensor_fault`; intended states
+  (`out_of_range`, `below_minimum`, `polarizing`, `tilted`, `not_connected`)
+  do not. Milesight EM500-UDL, SWL, PT100, PP, LGT, SMTC, CO2 (live, alarm
+  and history), GS301 temperature/humidity, EM400-TLD/MUD distance 65000
+  (`tilted` when position says so), EM310-UDL distance 0. Dragino `0x7FFF`
+  probes and LDDS75 blind zone are states; LDDS75 missing module is a fault.
+- EM500-PP pressure is UINT16 per the user guide. EM500-UDL `83/e9` is
+  millimetres per the guide: `distance`, `distance_change`, `distance_alarm`
+  (`distance_alarm_value` and `distance_mutation` are gone). WS302 levels
+  are INT16.
+- Dragino LHT65N: byte 6 low nibble is the type, high nibble status flags
+  (attributes); TMP117 and SHT31 probes (`humidity_external`); timestamp
+  layout for types 9/10 and fPort 3 datalog → history. LHT52 fPort 3
+  datalog → history. LSE01 MOD=1 raw mode → attributes. LDS02/LWL02 EDC
+  5-byte packet → `event_count`.
 - `test/vendors/captures.test.ts`: production ThingPark uplinks for
   Milesight, Dragino and Ellenex, the first hardware-verified vectors.
 
