@@ -1,7 +1,7 @@
 import { expect } from 'vitest';
 import { decode } from '../src/index.js';
 import type { Detailed, Options, TelemetryValue } from '../src/core/types.js';
-import { KEY_PATTERN, VOCABULARY } from '../src/core/vocabulary.js';
+import { KEY_PATTERN, isVocabularyKey, vocabularyUnit } from '../src/core/vocabulary.js';
 
 /**
  * Decode with `detailed: true` and assert vocabulary conformance on the way
@@ -18,12 +18,12 @@ export function run(
   const d = decode(vendor, model, hex, { ...options, detailed: true });
   for (const [key, unit] of Object.entries(d.units)) {
     expect(key in d.telemetry, `units has "${key}" but telemetry does not`).toBe(true);
-    expect(unit, `unit of "${key}"`).toBe(VOCABULARY[key]);
+    expect(unit, `unit of "${key}"`).toBe(vocabularyUnit(key));
   }
   for (const key of Object.keys(d.telemetry)) checkKey(key, d.units[key] ?? null);
   for (const record of d.history) {
     for (const key of Object.keys(record)) {
-      if (key !== 'ts') expect(key in VOCABULARY, `history key "${key}" not in vocabulary`).toBe(true);
+      if (key !== 'ts') expect(isVocabularyKey(key), `history key "${key}" not in vocabulary`).toBe(true);
     }
   }
   return d;
@@ -31,8 +31,8 @@ export function run(
 
 function checkKey(key: string, unit: string | null): void {
   expect(key, `key "${key}" must be snake_case`).toMatch(KEY_PATTERN);
-  expect(key in VOCABULARY, `key "${key}" not in vocabulary`).toBe(true);
-  expect(unit, `unit of "${key}"`).toBe(VOCABULARY[key]);
+  expect(isVocabularyKey(key), `key "${key}" not in vocabulary`).toBe(true);
+  expect(unit, `unit of "${key}"`).toBe(vocabularyUnit(key));
 }
 
 export function valueOf(d: Detailed, key: string): TelemetryValue | undefined {

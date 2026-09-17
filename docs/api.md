@@ -67,7 +67,7 @@ String = hex unless `encoding: 'base64'`. Hex accepts spaces, `:`, `,`, `-`,
 
 | Vendor | Key | Meaning |
 |---|---|---|
-| Ellenex | `profile` | `'adc14'`, `'microamp'`, `'direct'`. Without it readings go on `<key>_raw`. |
+| Ellenex | `profile` | Opt-in ADC conversion: `'adc14'`, `'microamp'`, `'direct'`. Not needed for the standard pressure/level models. |
 | Ellenex | `range` | Full-scale range in the output unit (m or kPa). Required by `adc14`, `microamp`. |
 | Ellenex | `density` | Relative to water, default 1. Also applied to V6 `level`. |
 | Ellenex | `generation` | `'legacy'` or `'v6'`, overrides detection. |
@@ -110,7 +110,7 @@ interface Warning { code: WarningCode; message: string; offset?: number; channel
 | `truncated_payload` | Frame ended mid-field or has the wrong fixed length. |
 | `unscaled_value` | Raw count; conversion configured out of band. |
 | `undocumented_field` | Undocumented bytes changed, or unimplemented sub-format. |
-| `sensor_fault` | Sentinel: probe absent, warming up, hardware error. |
+| `sensor_fault` | The device could not measure (`<key>_status` is `collection_failed` or `not_detected`). Intended states (`out_of_range`, `tilted`, `not_connected`, …) set `<key>_status` without a warning. |
 | `vendor_quirk` | Known vendor-decoder inconsistency, fPort or DeviceType mismatch. |
 | `duplicate_key` | Live key repeated in one frame; last value kept. |
 

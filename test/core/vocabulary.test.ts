@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { KEY_PATTERN, VOCABULARY } from '../../src/core/vocabulary.js';
+import { KEY_PATTERN, SENTINEL_LABELS, VOCABULARY, isFaultStatus, isVocabularyKey, vocabularyUnit } from '../../src/core/vocabulary.js';
 import { Unit } from '../../src/core/units.js';
 import { registry } from '../../src/index.js';
 
@@ -25,10 +25,20 @@ describe('telemetry vocabulary', () => {
   it('is fully declared by every registered model', () => {
     for (const def of registry.list()) {
       for (const [key, unit] of Object.entries(def.keys)) {
-        expect(key in VOCABULARY, `${def.model} declares "${key}"`).toBe(true);
-        expect(unit, `${def.model} unit for "${key}"`).toBe(VOCABULARY[key]);
+        expect(isVocabularyKey(key), `${def.model} declares "${key}"`).toBe(true);
+        expect(unit, `${def.model} unit for "${key}"`).toBe(vocabularyUnit(key));
       }
     }
+  });
+
+  it('derives <key>_status only from numeric keys', () => {
+    expect(isVocabularyKey('distance_status')).toBe(true);
+    expect(vocabularyUnit('distance_status')).toBeNull();
+    expect(isVocabularyKey('pir_status')).toBe(false);
+    expect(isVocabularyKey('nothing_status')).toBe(false);
+    expect(SENTINEL_LABELS).toContain('collection_failed');
+    expect(isFaultStatus('collection_failed')).toBe(true);
+    expect(isFaultStatus('tilted')).toBe(false);
   });
 
   it('has no key that no model declares', () => {

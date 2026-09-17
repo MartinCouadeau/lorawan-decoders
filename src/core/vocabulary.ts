@@ -4,6 +4,10 @@ import { Unit } from './units.js';
  * Key → unit for every telemetry key any decoder may emit. `null` = state or
  * event (string/boolean, no unit). Registration and tests reject keys or units
  * not in this table. Rules: docs/naming.md.
+ *
+ * Derived keys: `<key>_status` (unit null) is valid for every numeric key in
+ * the table. Decoders emit it instead of `<key>` when the device sends a
+ * sentinel; see FAULT_STATUS / STATE_STATUS below.
  */
 export const VOCABULARY: Record<string, Unit | null> = {
   // --- power -----------------------------------------------------------------
@@ -15,37 +19,42 @@ export const VOCABULARY: Record<string, Unit | null> = {
   // --- environment -----------------------------------------------------------
   temperature: Unit.CELSIUS,
   temperature_external: Unit.CELSIUS,
-  temperature_raw: Unit.RAW,
+  temperature_change: Unit.CELSIUS,
   temperature_alarm: null,
   humidity: Unit.PERCENT,
+  humidity_external: Unit.PERCENT,
+  soil_moisture: Unit.PERCENT,
+  soil_temperature: Unit.CELSIUS,
+  conductivity: Unit.MICROSIEMENS_PER_CM,
   barometric_pressure: Unit.HECTOPASCAL,
   illuminance: Unit.LUX,
+  illuminance_ir: Unit.LUX,
+  illuminance_ir_visible: Unit.LUX,
   light_level: Unit.INDEX,
+  daylight: null,
+  activity: Unit.INDEX,
 
   // --- air quality -----------------------------------------------------------
   co2: Unit.PPM,
   tvoc: Unit.MICROGRAM_PER_M3,
   tvoc_index: Unit.INDEX,
+  tvoc_ppb: Unit.PPB,
+  hcho: Unit.MILLIGRAM_PER_M3,
+  o3: Unit.PPM,
   pm2_5: Unit.MICROGRAM_PER_M3,
   pm10: Unit.MICROGRAM_PER_M3,
   nh3: Unit.PPM,
-  nh3_status: null,
   h2s: Unit.PPM,
-  h2s_status: null,
   calibration_result: null,
 
   // --- distance, level, pressure ---------------------------------------------
   distance: Unit.MILLIMETRE,
+  distance_change: Unit.MILLIMETRE,
   distance_alarm: null,
-  distance_alarm_value: Unit.MILLIMETRE,
-  distance_mutation: Unit.MILLIMETRE,
   level: Unit.METRE,
-  level_raw: Unit.RAW,
   remaining: Unit.PERCENT,
   pressure: Unit.KILOPASCAL,
-  pressure_raw: Unit.RAW,
   differential_pressure: Unit.KILOPASCAL,
-  differential_pressure_raw: Unit.RAW,
 
   // --- electrical ------------------------------------------------------------
   current: Unit.MILLIAMPERE,
@@ -62,6 +71,11 @@ export const VOCABULARY: Record<string, Unit | null> = {
   channel_3: Unit.RAW,
   input_voltage: Unit.VOLT,
   input_level: null,
+  voltage: Unit.VOLT,
+  active_power: Unit.WATT,
+  power_factor: Unit.PERCENT,
+  energy: Unit.KILOWATT_HOUR,
+  socket_status: null,
   adc_raw: Unit.RAW,
   sensor_reading: Unit.RAW,
 
@@ -82,6 +96,9 @@ export const VOCABULARY: Record<string, Unit | null> = {
 
   // --- counters --------------------------------------------------------------
   pulse_count: Unit.COUNT,
+  open_count: Unit.COUNT,
+  open_duration: Unit.MINUTE,
+  event_count: Unit.COUNT,
   total_counter_in: Unit.COUNT,
   total_counter_out: Unit.COUNT,
   periodic_counter_in: Unit.COUNT,
@@ -95,19 +112,53 @@ export const VOCABULARY: Record<string, Unit | null> = {
   button_event: null,
   dry_contact: null,
   interrupt: null,
+  alarm: null,
 };
 
 export const KEY_PATTERN = /^[a-z][a-z0-9]*(_[a-z0-9]+)*$/;
 
+/**
+ * Labels used on `<key>_status`. Faults: the device could not measure →
+ * status plus a `sensor_fault` warning. States: the device measured and
+ * reports a condition on purpose → status only, no warning.
+ */
+export const FAULT_STATUS = ['collection_failed', 'not_detected'] as const;
+export const STATE_STATUS = ['out_of_range', 'below_minimum', 'polarizing', 'tilted', 'not_connected'] as const;
+export const SENTINEL_LABELS = [...FAULT_STATUS, ...STATE_STATUS] as const;
+export type SentinelLabel = (typeof SENTINEL_LABELS)[number];
+
+export function isFaultStatus(label: string): boolean {
+  return (FAULT_STATUS as readonly string[]).includes(label);
+}
+
+/** Base numeric key of a derived `<key>_status`, or undefined. */
+function statusBase(key: string): string | undefined {
+  if (!key.endsWith('_status')) return undefined;
+  const base = key.slice(0, -'_status'.length);
+  const unit = VOCABULARY[base];
+  return unit !== undefined && unit !== null ? base : undefined;
+}
+
+export function isVocabularyKey(key: string): boolean {
+  return key in VOCABULARY || statusBase(key) !== undefined;
+}
+
+/** Unit for a key, including derived `<key>_status` (null). Undefined if unknown. */
+export function vocabularyUnit(key: string): Unit | null | undefined {
+  if (key in VOCABULARY) return VOCABULARY[key];
+  return statusBase(key) !== undefined ? null : undefined;
+}
+
 /** Throws if `keys` has an entry missing from VOCABULARY or with a different unit. */
 export function assertVocabulary(model: string, keys: Record<string, Unit | null>): void {
   for (const [key, unit] of Object.entries(keys)) {
-    if (!(key in VOCABULARY)) {
+    const expected = vocabularyUnit(key);
+    if (expected === undefined) {
       throw new Error(`${model}: key "${key}" is not in the telemetry vocabulary (src/core/vocabulary.ts)`);
     }
-    if (VOCABULARY[key] !== unit) {
+    if (expected !== unit) {
       throw new Error(
-        `${model}: key "${key}" declared with unit ${String(unit)} but the vocabulary says ${String(VOCABULARY[key])}`,
+        `${model}: key "${key}" declared with unit ${String(unit)} but the vocabulary says ${String(expected)}`,
       );
     }
   }

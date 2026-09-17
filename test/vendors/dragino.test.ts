@@ -6,7 +6,7 @@ import { dragino } from '../../src/index.js';
  * Payloads follow the byte layout in Dragino's LHT65 user manual:
  *   0-1 battery (status in bits 15-14, mV in bits 13-0)
  *   2-3 SHT temperature int16 BE /100     4-5 SHT humidity uint16 BE /10
- *   6   external sensor type (bit 7 = configured but disconnected)
+ *   6   bits 3-0 external sensor type, bits 7-4 status flags
  *   7-8 DS18B20 temperature int16 BE /100 (0x7FFF = absent)
  */
 describe('Dragino LHT65', () => {
@@ -50,17 +50,17 @@ describe('Dragino LHT65', () => {
     expect(none.attributes['external_sensor']).toBe('none');
   });
 
-  it('warns when the probe is configured but disconnected, and does not emit 0x7FFF as a reading', () => {
-    const off = run('Dragino', 'LHT65', 'CBF60B0D0225817FFF7FFF');
-    expect(off.telemetry).not.toHaveProperty('temperature_external');
-    expect(off.warnings.map((w) => w.code)).toEqual(['sensor_fault']);
-    expect(off.warnings[0]!.message).toContain('not connected');
+  it('reads the byte-6 status flags into attributes and still decodes the probe', () => {
+    const resent = run('Dragino', 'LHT65', 'CBF60B0D0225C109C47FFF');
+    expect(valueOf(resent, 'temperature_external')).toBe(25);
+    expect(resent.attributes).toEqual({ external_sensor: 'ds18b20', no_ack: true, poll_reply: true });
   });
 
-  it('warns when the probe type is set but the value is the absent sentinel', () => {
+  it('reports a configured but absent probe as a state, not a fault', () => {
     const absent = run('Dragino', 'LHT65', 'CBF60B0D0225017FFF7FFF');
     expect(absent.telemetry).not.toHaveProperty('temperature_external');
-    expect(absent.warnings[0]!.message).toContain('0x7FFF');
+    expect(valueOf(absent, 'temperature_external_status')).toBe('not_connected');
+    expect(absent.warnings).toEqual([]);
   });
 
   it('decodes the other documented external sensor types onto vocabulary keys', () => {
@@ -73,8 +73,8 @@ describe('Dragino LHT65', () => {
   });
 
   it('leaves an unknown external type raw in attributes and warns', () => {
-    const odd = run('Dragino', 'LHT65', 'CBF60B0D0225 0A DEADBEEF');
-    expect(odd.attributes).toEqual({ external_sensor: 'unknown(0xa)', external_raw: 'deadbeef' });
+    const odd = run('Dragino', 'LHT65', 'CBF60B0D0225 0D DEADBEEF');
+    expect(odd.attributes).toEqual({ external_sensor: 'unknown(0xd)', external_raw: 'deadbeef' });
     expect(odd.warnings[0]!.code).toBe('undocumented_field');
   });
 

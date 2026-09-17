@@ -1,16 +1,17 @@
-import { ByteReader, round, toHex } from '../../core/reader.js';
+import { ByteReader, round } from '../../core/reader.js';
 import { DecodeError } from '../../core/errors.js';
 import type { Attributes, DecodeContext, DecodeResult, Reading } from '../../core/types.js';
 import { Unit } from '../../core/units.js';
 
 /**
- * Ellenex legacy frame, 8 bytes, fPort 15:
- *   0-2  undocumented (exposed as `header` attribute)
- *   3-4  primary reading, int16 BE, raw count
- *   5-6  secondary reading, int16 BE, raw count (temperature where fitted)
- *   7    battery, uint8, ×0.1 V
- * The readings are counts; the conversion is supplied per device. Without a
- * scaling profile they are emitted on `<key>_raw` with a warning.
+ * Ellenex legacy (V4) frame, fPort 15, one or more 8-byte packets:
+ *   0-1  device id: last two bytes of the DevEUI in the first packet, frame
+ *        counter in later packets
+ *   2    data type; 0x00 = sensor reading, anything else = configuration echo
+ *   3-4  primary reading, int16 BE, engineering units (mbar, mm)
+ *   5-6  secondary reading, int16 BE (temperature 0.01 °C where fitted)
+ *   7    battery, uint8, 0.1 V
+ * Layout and units confirmed on field captures (see docs/vendor-quirks.md).
  */
 
 export const ELLENEX_FPORT = 15;
@@ -18,89 +19,97 @@ export const ELLENEX_FPORT = 15;
 export type ScalingProfile = 'adc14' | 'microamp' | 'direct';
 
 export interface EllenexScaling {
+  /** Opt-in ADC-count conversion. Not needed for the standard pressure and level models. */
   profile?: ScalingProfile;
-  /** Full-scale sensor range, in the output unit: metres for level, kPa for pressure. */
+  /** Full-scale range in the output unit. Required by `adc14` and `microamp`. */
   range?: number;
   /** Liquid density relative to water; 1.0 water, ~0.85 diesel. */
   density?: number;
 }
 
-const OBSERVED_HEADER_FIRST_BYTE = 0x01;
-
 export interface LegacyReading {
-  /** Engineering key once scaled, e.g. `level`. */
   key: string;
   unit: Unit;
-  /** Key for the unscaled count, e.g. `level_raw`. */
-  rawKey: string;
+  /** Wire value divided by this gives the vocabulary unit. */
+  divisor: number;
+  decimals: number;
 }
 
 export interface LegacyOptions {
-  /** What the primary reading measures on this model. */
   primary: LegacyReading;
   /** Present only on the multi-sense models. */
   secondary?: LegacyReading;
 }
 
+const PACKET = 8;
+
 export function decodeLegacy(bytes: Uint8Array, ctx: DecodeContext, opts: LegacyOptions): DecodeResult {
-  if (bytes.length !== 8) {
-    throw new DecodeError('payload_too_short', `Ellenex legacy frames are 8 bytes; got ${bytes.length}`, {
+  if (bytes.length < 3) {
+    throw new DecodeError('payload_too_short', `Ellenex legacy frames are ${PACKET} bytes; got ${bytes.length}`, {
       length: bytes.length,
-      hint: 'a variable-length payload is probably Version 6 (CBOR)',
     });
   }
 
   const r = new ByteReader(bytes);
-  const header = r.take(3);
-  const primaryRaw = r.i16be();
-  const secondaryRaw = r.i16be();
-  const battery = round(r.u8() * 0.1, 1);
-
-  const attributes: Attributes = { header: toHex(header) };
   const readings: Reading[] = [];
+  const attributes: Attributes = {};
+  let packet = 0;
 
-  if (header[0] !== OBSERVED_HEADER_FIRST_BYTE) {
-    // Byte 0 is always 0x01 in every documented sample; anything else may mean a different layout.
-    ctx.warn({
-      code: 'undocumented_field',
-      offset: 0,
-      message:
-        `header byte 0 is 0x${(header[0] ?? 0).toString(16)}, expected 0x01; on FMS2-L byte 0 selects a different layout`,
-    });
+  while (r.remaining >= 3) {
+    const id = r.hex(2);
+    if (packet === 0) attributes['device_id'] = id;
+    else attributes['frame_counter'] = Number.parseInt(id, 16);
+
+    const dataType = r.u8();
+    if (dataType !== 0x00) {
+      attributes['data_type'] = dataType;
+      attributes['data'] = r.hex(r.remaining);
+      ctx.warn({
+        code: 'undocumented_field',
+        offset: 2,
+        message: `data type 0x${dataType.toString(16).padStart(2, '0')} is not a sensor reading; bytes kept in attributes.data`,
+      });
+      break;
+    }
+
+    if (r.remaining < PACKET - 3) {
+      ctx.warn({
+        code: 'truncated_payload',
+        offset: r.offset,
+        message: `sensor packet needs ${PACKET} bytes; ${r.remaining + 3} present`,
+      });
+      break;
+    }
+
+    const primaryRaw = r.i16be();
+    const secondaryRaw = r.i16be();
+    const battery = round(r.u8() * 0.1, 1);
+
+    readings.push(scaleReading(primaryRaw, opts.primary, ctx));
+    if (opts.secondary) {
+      readings.push({
+        key: opts.secondary.key, unit: opts.secondary.unit,
+        value: round(secondaryRaw / opts.secondary.divisor, opts.secondary.decimals),
+      });
+    }
+    readings.push({ key: 'battery_voltage', unit: Unit.VOLT, value: battery });
+    packet++;
   }
 
-  readings.push(scaleReading(primaryRaw, opts.primary, ctx));
-
-  if (opts.secondary) {
-    readings.push({ key: opts.secondary.rawKey, unit: Unit.RAW, value: secondaryRaw });
-    ctx.warn({
-      code: 'unscaled_value',
-      message: `${opts.secondary.key} reported as a raw count on ${opts.secondary.rawKey}; no documented scaling`,
-    });
-  }
-
-  readings.push({ key: 'battery_voltage', unit: Unit.VOLT, value: battery });
-
+  if (packet > 1) attributes['packets'] = packet;
   return { readings, attributes };
 }
 
 function scaleReading(raw: number, spec: LegacyReading, ctx: DecodeContext): Reading {
   const scaling = ctx.options.scaling as EllenexScaling | undefined;
   const profile = scaling?.profile;
+  const density = scaling?.density ?? 1;
 
   if (!profile) {
-    ctx.warn({
-      code: 'unscaled_value',
-      message:
-        `${spec.key} is a raw sensor count, reported on ${spec.rawKey}; ` +
-        `pass scaling { profile, range, density } to get ${spec.key} in ${spec.unit}`,
-    });
-    return { key: spec.rawKey, unit: Unit.RAW, value: raw };
+    return { key: spec.key, unit: spec.unit, value: round(raw / spec.divisor, spec.decimals) };
   }
 
   const range = scaling?.range;
-  const density = scaling?.density ?? 1;
-
   let value: number;
   switch (profile) {
     // 4-20 mA loop on a 14-bit ADC: 4 mA = 10 % of full scale, 20 mA = 90 %.
@@ -113,12 +122,11 @@ function scaleReading(raw: number, spec: LegacyReading, ctx: DecodeContext): Rea
       requireRange(range, profile);
       value = (range! * (raw - 4000)) / 16000 / density;
       break;
-    // Already in the target unit; density only.
+    // Wire value already in the output unit; density only.
     case 'direct':
       value = raw / density;
       break;
   }
-
   return { key: spec.key, unit: spec.unit, value: round(value, 3) };
 }
 

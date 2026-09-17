@@ -5,9 +5,9 @@ import { ELLENEX_FPORT, decodeLegacy, type LegacyOptions, type LegacyReading } f
 import { V6_KEYS, decodeV6, type V6Options } from './v6.js';
 
 const SOURCE =
-  'Ellenex public payload decoders (github.com/ellenex/lorawan-payload-decoders) and the ' +
-  'Apache-2.0 TTN Device Repository codecs, verified against their published test vectors. ' +
-  'Implemented from the documented layout; no vendor code reused (their repo carries no licence).';
+  'Ellenex public payload decoders (github.com/ellenex/lorawan-payload-decoders), the Apache-2.0 TTN ' +
+  'Device Repository codecs, and field captures from ThingPark. Implemented from the documented layout; ' +
+  'no vendor code reused (their repo carries no licence).';
 
 /** V6 maps are self-describing, so every model may emit any V6 key. */
 const V6_TELEMETRY_KEYS: Record<string, Unit | null> = Object.fromEntries(
@@ -17,13 +17,9 @@ const V6_TELEMETRY_KEYS: Record<string, Unit | null> = Object.fromEntries(
 export interface EllenexTelemetry extends Telemetry {
   battery_voltage?: number;
   pressure?: number;
-  pressure_raw?: number;
   differential_pressure?: number;
-  differential_pressure_raw?: number;
   level?: number;
-  level_raw?: number;
   temperature?: number;
-  temperature_raw?: number;
   distance?: number;
   current?: number;
   current_1?: number;
@@ -47,9 +43,7 @@ function ellenexModel<N extends string, A extends string>(
 ): ModelDefinition<EllenexTelemetry, N | A> {
   const keys: Record<string, Unit | null> = { ...V6_TELEMETRY_KEYS };
   for (const spec of [legacy.primary, legacy.secondary]) {
-    if (!spec) continue;
-    keys[spec.key] = spec.unit;
-    keys[spec.rawKey] = Unit.RAW;
+    if (spec) keys[spec.key] = spec.unit;
   }
   return {
     vendor: 'Ellenex',
@@ -67,13 +61,12 @@ function ellenexModel<N extends string, A extends string>(
   };
 }
 
-const pressure: LegacyReading = { key: 'pressure', unit: Unit.KILOPASCAL, rawKey: 'pressure_raw' };
-const differential: LegacyReading = {
-  key: 'differential_pressure', unit: Unit.KILOPASCAL, rawKey: 'differential_pressure_raw',
-};
-const level: LegacyReading = { key: 'level', unit: Unit.METRE, rawKey: 'level_raw' };
-const temperature: LegacyReading = { key: 'temperature', unit: Unit.CELSIUS, rawKey: 'temperature_raw' };
-const sensorReading: LegacyReading = { key: 'sensor_reading', unit: Unit.RAW, rawKey: 'sensor_reading' };
+// Legacy wire units: mbar for pressure, mm for level, 0.01 °C for temperature.
+const pressure: LegacyReading = { key: 'pressure', unit: Unit.KILOPASCAL, divisor: 10, decimals: 1 };
+const differential: LegacyReading = { key: 'differential_pressure', unit: Unit.KILOPASCAL, divisor: 10, decimals: 1 };
+const level: LegacyReading = { key: 'level', unit: Unit.METRE, divisor: 1000, decimals: 3 };
+const temperature: LegacyReading = { key: 'temperature', unit: Unit.CELSIUS, divisor: 100, decimals: 2 };
+const sensorReading: LegacyReading = { key: 'sensor_reading', unit: Unit.RAW, divisor: 1, decimals: 0 };
 
 export const ELLENEX_MODELS = [
   // --- single-sense pressure -------------------------------------------------

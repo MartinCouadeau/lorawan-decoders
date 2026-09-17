@@ -85,3 +85,23 @@ describe('parseBase64', () => {
     expect(() => parseBase64('')).toThrow(/empty/);
   });
 });
+
+describe('Milesight readNumber signed widths', () => {
+  it('reads int8 and int32 with sentinels matched on the wire pattern', async () => {
+    const { readNumber } = await import('../../src/vendors/milesight/tlv.js');
+    const { ByteReader } = await import('../../src/core/reader.js');
+    const { Unit } = await import('../../src/core/units.js');
+    const out: unknown[] = [];
+    const emit = { reading: (r: unknown) => out.push(r), warn: () => undefined };
+    readNumber(new ByteReader(Uint8Array.from([0xff])), emit, { key: 'temperature', type: 'i8', unit: Unit.CELSIUS });
+    readNumber(new ByteReader(Uint8Array.from([0xff, 0xff, 0xff, 0xff])), emit, { key: 'temperature', type: 'i32le', unit: Unit.CELSIUS });
+    readNumber(new ByteReader(Uint8Array.from([0xff, 0xff, 0xff, 0xff])), emit, {
+      key: 'temperature', type: 'i32le', unit: Unit.CELSIUS, sentinels: { 0xffffffff: 'collection_failed' },
+    });
+    expect(out).toEqual([
+      { key: 'temperature', unit: '°C', value: -1 },
+      { key: 'temperature', unit: '°C', value: -1 },
+      { key: 'temperature_status', value: 'collection_failed' },
+    ]);
+  });
+});
