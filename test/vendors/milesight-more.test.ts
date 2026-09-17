@@ -130,3 +130,77 @@ describe('Milesight AM100 and AM319 series', () => {
     expect(run('Milesight', 'AM319-O3', '21ce' + rec).history[0]).toMatchObject({ tvoc: 37, o3: 0.07 });
   });
 });
+
+describe('Milesight CT103 (CT10x)', () => {
+  it('decodes the README examples, current in mA', () => {
+    expect(run('Milesight', 'CT103', '039710270000').telemetry).toEqual({ total_current: 100 });
+    expect(run('Milesight', 'CT103', '0498B80B').telemetry).toEqual({ current: 30000 });
+    expect(unitOf(run('Milesight', 'CT103', '039710270000'), 'total_current')).toBe('Ah');
+  });
+
+  it('decodes the user guide temperature and energy example', () => {
+    expect(run('Milesight', 'CT103', '09673401 109910270000').telemetry).toEqual({ temperature: 30.8, energy: 100 });
+  });
+
+  it('splits the current alarm bitfield into threshold and over-range keys', () => {
+    expect(run('Milesight', 'CT103', '8498 B80B D007 C409 05').telemetry).toEqual({
+      current_max: 30000, current_min: 20000, current: 25000,
+      current_alarm: 'threshold_alarm', current_over_range_alarm: 'over_range_alarm',
+    });
+    expect(run('Milesight', 'CT103', '8498 B80B D007 C409 0a').telemetry).toMatchObject({
+      current_alarm: 'threshold_alarm_release', current_over_range_alarm: 'over_range_alarm_release',
+    });
+    const thresholdOnly = run('Milesight', 'CT103', '8498 B80B D007 C409 01').telemetry;
+    expect(thresholdOnly).not.toHaveProperty('current_over_range_alarm');
+    expect(valueOf(run('Milesight', 'CT103', '8498 B80B D007 C409 00'), 'current_alarm')).toBe('unknown(0)');
+  });
+
+  it('decodes the temperature alarm', () => {
+    expect(run('Milesight', 'CT103', '8967220101').telemetry).toEqual({ temperature: 29, temperature_alarm: 'threshold_alarm' });
+  });
+
+  it('README example with trailing zero bytes: the current decodes, the rest is an unknown channel', () => {
+    const d = run('Milesight', 'CT103', '0498B80B00000000');
+    expect(d.telemetry).toEqual({ current: 30000 });
+    expect(d.warnings[0]?.code).toBe('unknown_channel');
+  });
+
+  it('CT101 and CT105 route to the same decoder', () => {
+    expect(milesight.ct101('0498B80B')).toEqual({ current: 30000 });
+    expect(milesight.ct105('0498B80B')).toEqual({ current: 30000 });
+  });
+});
+
+describe('Milesight VS351', () => {
+  it('decodes the README alarm examples', () => {
+    expect(run('Milesight', 'VS351', '84CC0111081101 85CCE803E90301').telemetry).toEqual({
+      total_counter_in: 4353, total_counter_out: 4360, total_counter_alarm: 'threshold_alarm',
+      periodic_counter_in: 1000, periodic_counter_out: 1001, periodic_counter_alarm: 'threshold_alarm',
+    });
+    expect(run('Milesight', 'VS351', '8367360101').telemetry).toEqual({ temperature: 31, temperature_alarm: 'threshold_alarm' });
+    expect(run('Milesight', 'VS351', '8367500103').telemetry).toEqual({ temperature: 33.6, temperature_alarm: 'high_temperature_alarm' });
+    expect(run('Milesight', 'VS351', '83673E0104').telemetry).toEqual({ temperature: 31.8, temperature_alarm: 'high_temperature_alarm_release' });
+  });
+
+  it('history is 9 bytes with data_type 0 (README example) and 13 with data_type 1 (synthetic)', () => {
+    expect(run('Milesight', 'VS351', '20CE7B3AF164000B000400').history).toEqual([
+      { ts: '2023-09-01T01:12:27.000Z', periodic_counter_in: 11, periodic_counter_out: 4 },
+    ]);
+    const both = run('Milesight', 'VS351', '20CE7B3AF164010B00040012001600' + '017564');
+    expect(both.history).toEqual([{
+      ts: '2023-09-01T01:12:27.000Z', periodic_counter_in: 11, periodic_counter_out: 4, total_counter_in: 18, total_counter_out: 22,
+    }]);
+    expect(both.telemetry).toEqual({ battery: 100 });     // the next channel is found after the 13-byte record
+  });
+
+  it('warns on a truncated history record and labels an unknown alarm code', () => {
+    expect(run('Milesight', 'VS351', '20CE7B3AF164010B00').warnings[0]?.code).toBe('truncated_payload');
+    expect(run('Milesight', 'VS351', '20CE7B3A').warnings[0]?.code).toBe('truncated_payload');
+    expect(valueOf(run('Milesight', 'VS351', '84CC0100020009'), 'total_counter_alarm')).toBe('unknown(9)');
+  });
+
+  it('reads the 6-byte serial and dotted firmware version', () => {
+    const d = run('Milesight', 'VS351', 'ff08 6746d3880258 ff1f 84010001');
+    expect(d.attributes).toEqual({ serial_number: '6746d3880258', firmware_version: '132.1.0.1' });
+  });
+});

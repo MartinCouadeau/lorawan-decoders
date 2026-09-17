@@ -60,10 +60,13 @@ telemetry; it is in `attributes` with `detailed: true`.
 | `current_2` | mA | Ellenex, Netvox |
 | `current_3` | mA | Ellenex, Netvox |
 | `current_4` | mA | Ellenex |
-| `current_alarm` | — (state/event) | Netvox |
+| `current_alarm` | — (state/event) | Milesight, Netvox |
 | `current_alarm_1` | — (state/event) | Netvox |
 | `current_alarm_2` | — (state/event) | Netvox |
 | `current_alarm_3` | — (state/event) | Netvox |
+| `current_max` | mA | Milesight |
+| `current_min` | mA | Milesight |
+| `current_over_range_alarm` | — (state/event) | Milesight |
 | `daylight` | — (state/event) | Milesight |
 | `differential_pressure` | kPa | Ellenex |
 | `distance` | mm | Dragino, Ellenex, Milesight |
@@ -72,6 +75,7 @@ telemetry; it is in `attributes` with `detailed: true`.
 | `dry_contact` | — (state/event) | Ellenex |
 | `energy` | kWh | Milesight |
 | `event_count` | count | Dragino |
+| `fire_alarm` | — (state/event) | Netvox |
 | `h2s` | ppm | Milesight |
 | `hcho` | mg/m³ | Milesight |
 | `humidity` | % | Dragino, Milesight |
@@ -90,6 +94,7 @@ telemetry; it is in `attributes` with `detailed: true`.
 | `o3` | ppm | Milesight |
 | `open_count` | count | Dragino |
 | `open_duration` | min | Dragino |
+| `periodic_counter_alarm` | — (state/event) | Milesight |
 | `periodic_counter_in` | count | Milesight |
 | `periodic_counter_out` | count | Milesight |
 | `pir` | — (state/event) | Milesight |
@@ -108,12 +113,14 @@ telemetry; it is in `attributes` with `detailed: true`.
 | `sound_level_eq` | dB | Milesight |
 | `sound_level_max` | dB | Milesight |
 | `tamper_status` | — (state/event) | Milesight |
-| `temperature` | °C | Dragino, Ellenex, Milesight |
-| `temperature_alarm` | — (state/event) | Milesight |
+| `temperature` | °C | Dragino, Ellenex, Milesight, Netvox |
+| `temperature_alarm` | — (state/event) | Milesight, Netvox |
 | `temperature_change` | °C | Milesight |
 | `temperature_external` | °C | Dragino |
+| `total_counter_alarm` | — (state/event) | Milesight |
 | `total_counter_in` | count | Milesight |
 | `total_counter_out` | count | Milesight |
+| `total_current` | Ah | Milesight |
 | `tvoc` | µg/m³ | Milesight |
 | `tvoc_index` | index | Milesight |
 | `tvoc_ppb` | ppb | Milesight |

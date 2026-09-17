@@ -11,10 +11,12 @@ export { NETVOX_MODELS } from './vendors/netvox/index.js';
 export { ELLENEX_MODELS } from './vendors/ellenex/index.js';
 export { DRAGINO_MODELS } from './vendors/dragino/index.js';
 export type { EllenexTelemetry, EllenexScaling, ScalingProfile } from './vendors/ellenex/index.js';
-export type { Lht65Telemetry } from './vendors/dragino/index.js';
+export type {
+  Lht65Telemetry, Lht52Telemetry, Lds02Telemetry, Lwl02Telemetry, Ldds75Telemetry, Lse01Telemetry, Lsn50Telemetry,
+} from './vendors/dragino/index.js';
 export type {
   SinglePhaseTelemetry, ThreePhaseTelemetry, LightSinglePhaseTelemetry,
-  LightThreePhaseTelemetry, CurrentInterfaceTelemetry,
+  LightThreePhaseTelemetry, CurrentInterfaceTelemetry, SmokeDetectorTelemetry,
 } from './vendors/netvox/index.js';
 
 /** Vendor namespaces: `milesight.em310_tilt(payload)`. Keys = model names and aliases, lowercased, separators → `_`. */

@@ -3,7 +3,7 @@ import type { KeySpec } from '../../core/types.js';
 import { Unit } from '../../core/units.js';
 import {
   enumState, numeric, readNumber, struct,
-  type ChannelEmit, type ChannelMap, type ChannelSpec, type Sentinels,
+  type ChannelEmit, type ChannelLength, type ChannelMap, type ChannelSpec, type Sentinels,
 } from './tlv.js';
 import { isoFromUnix } from './attributes.js';
 
@@ -106,22 +106,89 @@ export function illuminationTriple() {
   );
 }
 
-const THRESHOLD_ALARM: Record<number, string> = {
+export const THRESHOLD_ALARM: Record<number, string> = {
   0: 'threshold_alarm_release',
   1: 'threshold_alarm',
 };
 
-/** EM400 alarm channels: value plus a trailing alarm byte. */
-export function alarmTemperature() {
-  return struct<{ temperature?: number; temperature_alarm?: string }>(
-    3,
-    { temperature: Unit.CELSIUS, temperature_alarm: null },
+/** VS351 83/67 adds the fixed high-temperature alarm to the threshold pair. */
+export const HIGH_TEMPERATURE_ALARM: Record<number, string> = {
+  ...THRESHOLD_ALARM,
+  3: 'high_temperature_alarm',
+  4: 'high_temperature_alarm_release',
+};
+
+/** Temperature plus a trailing alarm byte (EM400 83/67, VS351 83/67, CT10x 89/67). */
+export function alarmTemperature(labels?: Record<number, string>): ChannelSpec<{ temperature?: number; temperature_alarm?: string }>;
+export function alarmTemperature(
+  labels: Record<number, string>, sentinels: Sentinels,
+): ChannelSpec<{ temperature?: number; temperature_status?: string; temperature_alarm?: string }>;
+export function alarmTemperature(labels: Record<number, string> = THRESHOLD_ALARM, sentinels?: Sentinels) {
+  type T = { temperature?: number; temperature_status?: string; temperature_alarm?: string };
+  const keys: Record<string, Unit | null> = { temperature: Unit.CELSIUS, temperature_alarm: null };
+  if (sentinels) keys['temperature_status'] = null;
+  return struct<T>(3, keys as KeySpec<T>, (r, emit) => {
+    readNumber(r, emit, {
+      key: 'temperature', type: 'i16le', unit: Unit.CELSIUS, divisor: 10, decimals: 1, ...(sentinels ? { sentinels } : {}),
+    });
+    const code = r.u8();
+    emit.reading({ key: 'temperature_alarm', value: labels[code] ?? `unknown(${code})` });
+  });
+}
+
+/** CT10x current on the wire is 0.01 A; the vocabulary `current` is mA. */
+const CT_CURRENT = { type: 'u16le', unit: Unit.MILLIAMPERE, divisor: 0.1, decimals: 0 } as const;
+
+export const ctCurrent = () => numeric({ key: 'current', ...CT_CURRENT, sentinels: FAILED_16 });
+
+/**
+ * CT10x 84/98: max, min and latest current, then an alarm bitfield. Bits:
+ * 0 threshold, 1 threshold release, 2 over range, 3 over range release. The
+ * guide shows combinations (0x05, 0x0a), so the two conditions get one key each.
+ */
+export function ctCurrentAlarm() {
+  type T = {
+    current_max?: number; current_min?: number; current?: number; current_status?: string;
+    current_alarm?: string; current_over_range_alarm?: string;
+  };
+  return struct<T>(
+    7,
+    {
+      current_max: Unit.MILLIAMPERE, current_min: Unit.MILLIAMPERE, current: Unit.MILLIAMPERE, current_status: null,
+      current_alarm: null, current_over_range_alarm: null,
+    },
     (r, emit) => {
-      emit.reading({ key: 'temperature', unit: Unit.CELSIUS, value: round(r.i16le() / 10, 1) });
-      const code = r.u8();
-      emit.reading({ key: 'temperature_alarm', value: THRESHOLD_ALARM[code] ?? `unknown(${code})` });
+      emit.reading({ key: 'current_max', unit: Unit.MILLIAMPERE, value: r.u16le() * 10 });
+      emit.reading({ key: 'current_min', unit: Unit.MILLIAMPERE, value: r.u16le() * 10 });
+      readNumber(r, emit, { key: 'current', ...CT_CURRENT, sentinels: FAILED_16 });
+      const flags = r.u8();
+      if (flags & 0x01) emit.reading({ key: 'current_alarm', value: 'threshold_alarm' });
+      else if (flags & 0x02) emit.reading({ key: 'current_alarm', value: 'threshold_alarm_release' });
+      if (flags & 0x04) emit.reading({ key: 'current_over_range_alarm', value: 'over_range_alarm' });
+      else if (flags & 0x08) emit.reading({ key: 'current_over_range_alarm', value: 'over_range_alarm_release' });
+      if ((flags & 0x0f) === 0) emit.reading({ key: 'current_alarm', value: `unknown(${flags})` });
     },
   );
+}
+
+/** People counters: two uint16 counts, in then out. */
+export function counterPair<I extends string, O extends string>(inKey: I, outKey: O) {
+  type T = { [P in I | O]?: number };
+  return struct<T>(4, { [inKey]: Unit.COUNT, [outKey]: Unit.COUNT } as KeySpec<T>, (r, emit) => {
+    emit.reading({ key: inKey, unit: Unit.COUNT, value: r.u16le() });
+    emit.reading({ key: outKey, unit: Unit.COUNT, value: r.u16le() });
+  });
+}
+
+/** Counter pair plus a trailing alarm byte (VS351 84/cc, 85/cc). */
+export function counterPairAlarm<I extends string, O extends string, A extends string>(inKey: I, outKey: O, alarmKey: A) {
+  type T = { [P in I | O]?: number } & { [P in A]?: string };
+  return struct<T>(5, { [inKey]: Unit.COUNT, [outKey]: Unit.COUNT, [alarmKey]: null } as KeySpec<T>, (r, emit) => {
+    emit.reading({ key: inKey, unit: Unit.COUNT, value: r.u16le() });
+    emit.reading({ key: outKey, unit: Unit.COUNT, value: r.u16le() });
+    const code = r.u8();
+    emit.reading({ key: alarmKey, value: code === 1 ? 'threshold_alarm' : `unknown(${code})` });
+  });
 }
 
 export function alarmDistance() {
@@ -209,7 +276,7 @@ export function soundLevels() {
 
 /** Buffered record: uint32 unix timestamp, then fields. Readings get `at` and go to history. */
 export function history<T extends object>(
-  length: number,
+  length: ChannelLength,
   keys: KeySpec<T>,
   read: (r: ByteReader, emit: ChannelEmitAt) => void,
 ): ChannelSpec<T> {

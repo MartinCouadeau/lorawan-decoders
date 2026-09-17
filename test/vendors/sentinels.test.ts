@@ -99,6 +99,16 @@ describe('Milesight distance sentinels on other series', () => {
   });
 });
 
+describe('Milesight CT10x sentinels (user guide: current ffff = collection failure; temperature fffd = over range)', () => {
+  it('current and temperature, live and in the alarm channels', () => {
+    expect(status('Milesight', 'CT103', '0498ffff', 'current')).toBe('collection_failed');
+    expect(status('Milesight', 'CT103', '0967ffff', 'temperature')).toBe('collection_failed');
+    expect(status('Milesight', 'CT103', '0967fdff', 'temperature')).toBe('out_of_range');
+    expect(status('Milesight', 'CT103', '8498 B80B D007 ffff 01', 'current')).toBe('collection_failed');
+    expect(status('Milesight', 'CT103', '8967fdff01', 'temperature')).toBe('out_of_range');
+  });
+});
+
 describe('Milesight GS301 sentinels (user guide: ffff or ff = collection error, fffe = polarizing)', () => {
   it('applies to temperature and humidity as well as the gas channels', () => {
     expect(status('Milesight', 'GS301', '0267ffff', 'temperature')).toBe('collection_failed');
@@ -159,7 +169,7 @@ describe('Dragino LHT65N datalog entries with other external types (synthetic)',
 
   it('warns on an unknown type and on a length that is not a multiple of 11', () => {
     const odd = run('Dragino', 'LHT65N', '0102 0898 0146 0D 60065F97 FF', { fPort: 3 });
-    expect(odd.warnings.map((w) => w.code).filter((c) => c !== 'vendor_quirk')).toEqual(['truncated_payload', 'undocumented_field']);
+    expect(odd.warnings.map((w) => w.code)).toEqual(['truncated_payload', 'undocumented_field']);
     expect(odd.history[0]).toEqual({ ts: '2021-01-19T04:27:03.000Z', temperature: 22, humidity: 32.6 });
   });
 
@@ -215,6 +225,6 @@ describe('Dragino LDS02 EDC packet', () => {
     const close = run('Dragino', 'LDS02', '0C60 000014', { fPort: 7 });
     expect(close.telemetry.event_count).toBe(20);
     expect(close.attributes['edc_event']).toBe('close');
-    expect(close.warnings.filter((w) => w.code !== 'vendor_quirk')).toEqual([]);   // only the fPort-differs note
+    expect(close.warnings).toEqual([]);                        // fPort 7 is a documented port
   });
 });

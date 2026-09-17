@@ -100,6 +100,7 @@ export class DecoderRegistry {
         accessor: accessorName(d.model),
         aliases: [...(d.aliases ?? [])],
         ...(d.fPort !== undefined ? { fPort: d.fPort } : {}),
+        ...(d.otherFPorts ? { otherFPorts: [...d.otherFPorts] } : {}),
         description: d.description,
         keys: { ...d.keys },
       }));
@@ -147,10 +148,11 @@ export function runDefinition(def: AnyModelDefinition, payload: Payload, options
   };
   const ctx: DecodeContext = { model: def.model, options, warn };
 
-  if (def.fPort !== undefined && options.fPort !== undefined && options.fPort !== def.fPort) {
+  const documented = [def.fPort, ...(def.otherFPorts ?? [])];
+  if (def.fPort !== undefined && options.fPort !== undefined && !documented.includes(options.fPort)) {
     warn({
       code: 'vendor_quirk',
-      message: `uplink arrived on fPort ${options.fPort}; ${def.vendor} documents fPort ${def.fPort} for ${def.model}`,
+      message: `uplink arrived on fPort ${options.fPort}; ${def.vendor} documents fPort ${documented.join(', ')} for ${def.model}`,
     });
   }
 

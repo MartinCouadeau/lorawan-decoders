@@ -90,9 +90,18 @@ describe('isModel and models', () => {
     expect(isModel('acme', 'EM310-TILT')).toBe(false);
   });
 
+  it('accepts every documented port and warns on any other', () => {
+    const datalog = decode('dragino', 'LHT65N', '7FFF089801464160065F97', { fPort: 3, detailed: true });
+    expect(datalog.warnings).toEqual([]);
+    const wrong = decode('dragino', 'LHT65N', 'CBF60B0D0225007FFF7FFF', { fPort: 9, detailed: true });
+    expect(wrong.warnings[0]?.message).toContain('documents fPort 2, 3');
+    expect(models('dragino').find((m) => m.name === 'LHT65')?.otherFPorts).toEqual([3]);
+    expect(models('netvox').find((m) => m.name === 'R718N1')).not.toHaveProperty('otherFPorts');
+  });
+
   it('lists models with accessor names, aliases and declared keys', () => {
     const netvox = models('netvox');
-    expect(netvox.map((m) => m.name)).toEqual(['R718N1', 'R718N3', 'R718N360', 'R718NL1', 'R718NL3']);
+    expect(netvox.map((m) => m.name)).toEqual(['R718N1', 'R718N3', 'R718N360', 'R718NL1', 'R718NL3', 'RA02A']);
     const n3 = netvox.find((m) => m.name === 'R718N3')!;
     expect(n3.accessor).toBe('r718n3');
     expect(n3.aliases).toHaveLength(32);

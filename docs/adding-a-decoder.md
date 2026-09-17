@@ -30,7 +30,12 @@ Telemetry type and `keys` are derived from the map. Builders in `channels.ts`:
 | `attribute(length, key, format)` | metadata → `attributes` |
 
 `length` = data bytes after the 2-byte header. The engine throws if `read`
-consumes a different count.
+consumes a different count. When the width depends on the data, pass a
+function that peeks (VS351 history: `(r) => r.peek(5)[4] === 1 ? 13 : 9`).
+
+`sentinels` maps a wire pattern to a status label; inside `struct`/`history`
+use `readNumber(r, emit, { …, sentinels })`. Shared sets are in `channels.ts`
+(`EM500_SENTINELS`, `FAILED_16`, `FAILED_8`).
 
 ## Other vendors: a function
 
@@ -88,6 +93,13 @@ is what types `acme.x1` and `acme.x_1`.
 6. Warn, do not throw, on recoverable problems. `strict: true` is the caller's
    choice.
 7. Metadata → attributes, not telemetry.
+8. Read the user guide, not only the payload table, for "no reading" values.
+   Never emit one as a number: emit `<key>_status` instead. Fault labels
+   (`collection_failed`, `not_detected`) also warn `sensor_fault`; intended
+   states (`out_of_range`, `below_minimum`, `polarizing`, `tilted`,
+   `not_connected`) do not. Labels are in `src/core/vocabulary.ts`.
+9. `fPort` is the main uplink port; list other documented ports (datalog,
+   configuration responses) in `otherFPorts` so they do not warn.
 8. `npm run docs` and commit the output.
 
 ## Checklist

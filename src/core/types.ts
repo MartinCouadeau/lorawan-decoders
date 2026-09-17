@@ -82,6 +82,8 @@ export interface ModelDefinition<T extends object = Telemetry, A extends string 
   description: string;
   /** fPort the vendor documents for uplinks, when they document one. */
   fPort?: number;
+  /** Further documented ports (datalog, configuration responses). No fPort warning on these. */
+  otherFPorts?: readonly number[];
   /** Documentation the format was implemented from. Printed in docs. */
   source: string;
   /** Every telemetry key this model can emit, with its unit. */
@@ -116,6 +118,8 @@ export interface ModelInfo {
   accessor: string;
   aliases: string[];
   fPort?: number;
+  /** Further documented ports (datalog, configuration responses). */
+  otherFPorts?: number[];
   description: string;
   keys: Record<string, Unit | null>;
 }

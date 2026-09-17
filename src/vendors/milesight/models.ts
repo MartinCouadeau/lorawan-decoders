@@ -4,7 +4,8 @@ import { Unit } from '../../core/units.js';
 import { COMMON_ATTRIBUTES, SHORT_SERIAL, VS_ATTRIBUTES } from './attributes.js';
 import {
   EM310_DISTANCE_SENTINELS, EM400_DISTANCE_SENTINELS, EM500_SENTINELS, EM500_SENTINELS_32, FAILED_16, FAILED_8,
-  GAS_SENTINELS, alarmDistance, alarmTemperature, barometric, battery, co2Ppm, distanceMm, enumState,
+  GAS_SENTINELS, HIGH_TEMPERATURE_ALARM, THRESHOLD_ALARM, alarmDistance, alarmTemperature, barometric, battery, co2Ppm,
+  counterPair, counterPairAlarm, ctCurrent, ctCurrentAlarm, distanceMm, enumState,
   history, humidityPct, illuminationTriple, lightLevel, mergeChannels, numeric, pir, readNumber, soundLevels, struct,
   temperatureAlarmChange, temperatureC, tiltAngles, udlDistanceAlarm,
 } from './channels.js';
@@ -263,14 +264,48 @@ const GS301 = {
 const VS132 = {
   '03/d2': numeric({ key: 'total_counter_in', type: 'u32le', unit: Unit.COUNT }),
   '04/d2': numeric({ key: 'total_counter_out', type: 'u32le', unit: Unit.COUNT }),
-  '05/cc': struct<{ periodic_counter_in?: number; periodic_counter_out?: number }>(
-    4,
-    { periodic_counter_in: Unit.COUNT, periodic_counter_out: Unit.COUNT },
+  '05/cc': counterPair('periodic_counter_in', 'periodic_counter_out'),
+};
+
+// --- VS351: uint16 counters; history is 9 bytes, or 13 when data_type = 1 ----
+type Vs351History = {
+  periodic_counter_in?: number; periodic_counter_out?: number; total_counter_in?: number; total_counter_out?: number;
+};
+const VS351 = {
+  '01/75': battery(),
+  '03/67': temperatureC(),
+  '04/cc': counterPair('total_counter_in', 'total_counter_out'),
+  '05/cc': counterPair('periodic_counter_in', 'periodic_counter_out'),
+  '83/67': alarmTemperature(HIGH_TEMPERATURE_ALARM),
+  '84/cc': counterPairAlarm('total_counter_in', 'total_counter_out', 'total_counter_alarm'),
+  '85/cc': counterPairAlarm('periodic_counter_in', 'periodic_counter_out', 'periodic_counter_alarm'),
+  '20/ce': history<Vs351History>(
+    (r) => (r.hasAtLeast(5) && r.peek(5)[4] === 1 ? 13 : 9),
+    {
+      periodic_counter_in: Unit.COUNT, periodic_counter_out: Unit.COUNT,
+      total_counter_in: Unit.COUNT, total_counter_out: Unit.COUNT,
+    },
     (r, emit) => {
+      const withTotals = r.u8() === 1;
       emit.reading({ key: 'periodic_counter_in', unit: Unit.COUNT, value: r.u16le() });
       emit.reading({ key: 'periodic_counter_out', unit: Unit.COUNT, value: r.u16le() });
+      if (withTotals) {
+        emit.reading({ key: 'total_counter_in', unit: Unit.COUNT, value: r.u16le() });
+        emit.reading({ key: 'total_counter_out', unit: Unit.COUNT, value: r.u16le() });
+      }
     },
   ),
+};
+
+// --- CT10x: current on the wire is 0.01 A → mA. ffff = collection failure;
+// temperature fffd = over range (user guide). 10/99 energy is in the guide only.
+const CT103 = {
+  '03/97': numeric({ key: 'total_current', type: 'u32le', unit: Unit.AMPERE_HOUR, divisor: 100, decimals: 2 }),
+  '04/98': ctCurrent(),
+  '09/67': temperatureC(EM500_SENTINELS),
+  '10/99': numeric({ key: 'energy', type: 'u32le', unit: Unit.KILOWATT_HOUR, divisor: 100, decimals: 2 }),
+  '84/98': ctCurrentAlarm(),
+  '89/67': alarmTemperature(THRESHOLD_ALARM, EM500_SENTINELS),
 };
 
 // --- EM500 series, more ------------------------------------------------------
@@ -496,4 +531,6 @@ export const MILESIGHT_MODELS = [
   model('AM319-O3', 'Indoor air quality sensor with ozone', AM319_O3, { aliases: ['AM319O3'] }),
   model('GS301', 'Odour/gas sensor (NH3, H2S)', GS301),
   model('VS132', '3D ToF people counter', VS132, { aliases: ['VS132-P'], attributes: VS_ATTRIBUTES }),
+  model('VS351', 'Mini AI thermopile people counter', VS351, { attributes: { ...VS_ATTRIBUTES, ...SHORT_SERIAL } }),
+  model('CT103', 'Smart current transformer (CT101/CT103/CT105 share the format)', CT103, { aliases: ['CT101', 'CT105'] }),
 ] as const;

@@ -7,7 +7,7 @@ for every vendor. Milesight, Netvox, Ellenex, Dragino.
 ![TypeScript](https://img.shields.io/badge/TypeScript-strict-blue)
 ![License](https://img.shields.io/badge/license-MIT-green)
 
-55 decoders, 173 model names, 4 vendors. Written from public vendor
+58 decoders, 178 model names, 4 vendors. Written from public vendor
 documentation; no vendor code copied. See [Provenance](#provenance-and-licensing).
 
 ```ts
@@ -142,7 +142,8 @@ npx lorawan-decode --list netvox
 - **Milesight**: channel/type TLV with no length field. An unknown channel ends
   parsing; a warning names it. Same channel id means different things per
   model, so each model has its own table.
-- **Netvox**: fixed 11-byte frame. Clamp-rating suffixes share one decoder
+- **Netvox**: fixed 11-byte frame, DeviceType byte per model (current meters,
+  RA02A smoke detector). Clamp-rating suffixes share one decoder
   (`R718N1` … `R718N1100E`). Three-phase ReportType 0x01 cannot carry all
   multipliers; pass them via `scaling`.
 - **Ellenex**: 8-byte legacy frame or CBOR (V6), detected by shape. Legacy
@@ -179,10 +180,11 @@ Each model definition has a `source` field. See [NOTICE.md](NOTICE.md).
 
 ## Status
 
-v0.3. Milesight EM300-SLD, AM307/AM308/AM308L, AM319-HCHO, WS301, Dragino
-LHT65N and Ellenex PLS2-L/PTS2-L/PDS2-L are verified against production
-captures (`test/vendors/captures.test.ts`). Everything else is verified
-against vendor documentation only. More captures are welcome.
+v0.4. Milesight EM300-SLD, AM307/AM308/AM308L, AM319-HCHO, WS301, CT103,
+VS351, Netvox RA02A, Dragino LHT65N and Ellenex PLS2-L/PTS2-L/PDS2-L are
+verified against production captures (`test/vendors/captures.test.ts`).
+Everything else is verified against vendor documentation only. More captures
+are welcome.
 
 ## Licence
 

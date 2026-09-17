@@ -1,5 +1,32 @@
 # Changelog
 
+## 0.4.0
+
+### Added
+
+- Milesight CT103 (aliases CT101, CT105): `total_current` (Ah), `current`,
+  `current_max`, `current_min` (mA), `energy`, NTC `temperature`, alarm
+  bitfield as `current_alarm` + `current_over_range_alarm`. `ffff` current
+  and temperature → `collection_failed`; `fffd` temperature → `out_of_range`.
+- Milesight VS351: uint16 in/out counters on the VS132 keys, counter and
+  temperature alarms (`total_counter_alarm`, `periodic_counter_alarm`,
+  `high_temperature_alarm`), history to `history`.
+- Netvox RA02A smoke detector: `fire_alarm`, `temperature_alarm`,
+  `temperature`; fPort 7 configuration responses → attributes.
+- Milesight TLV engine: a channel's length may depend on its data (VS351
+  history is 9 or 13 bytes).
+- Unit `Ah`. Field captures for all three models in
+  `test/vendors/captures.test.ts`.
+- `otherFPorts` on model definitions and `models()`: documented secondary
+  ports (LHT65/LHT52 datalog 3, LDS02/LWL02 EDC 7, RA02A configuration 7).
+
+### Fixed
+
+- Dragino telemetry types other than `Lht65Telemetry` were not exported from
+  the package root or `lorawan-decoders/dragino`.
+- Uplinks on a documented secondary port no longer raise the wrong-fPort
+  `vendor_quirk` warning, so `strict` accepts them.
+
 ## 0.3.0
 
 ### Added

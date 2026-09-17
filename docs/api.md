@@ -58,7 +58,7 @@ String = hex unless `encoding: 'base64'`. Hex accepts spaces, `:`, `,`, `-`,
 | Field | Type | Default | Meaning |
 |---|---|---|---|
 | `encoding` | `'hex' \| 'base64'` | `'hex'` | String payload format |
-| `fPort` | `number` | — | Warns `vendor_quirk` if it differs from the documented port |
+| `fPort` | `number` | — | Warns `vendor_quirk` if it is none of the model's documented ports. Some models route on it (Dragino fPort 3 datalog). |
 | `strict` | `boolean` | `false` | Throw on first warning |
 | `scaling` | `Record<string, number \| string>` | — | Vendor options, below |
 | `detailed` | `boolean` | `false` | Return `Detailed` |
@@ -142,7 +142,8 @@ interface ModelInfo {
   name: string;          // 'EM310-TILT'
   accessor: string;      // 'em310_tilt'
   aliases: string[];
-  fPort?: number;
+  fPort?: number;          // main uplink port
+  otherFPorts?: number[];  // datalog, configuration responses
   description: string;
   keys: Record<string, Unit | null>;   // null = state/event
 }
@@ -167,9 +168,9 @@ types.
 ## Telemetry types
 
 - Milesight: `ReturnType<typeof milesight.em310_tilt>`.
-- Netvox: `SinglePhaseTelemetry`, `ThreePhaseTelemetry`, `LightSinglePhaseTelemetry`, `LightThreePhaseTelemetry`, `CurrentInterfaceTelemetry`.
+- Netvox: `SinglePhaseTelemetry`, `ThreePhaseTelemetry`, `LightSinglePhaseTelemetry`, `LightThreePhaseTelemetry`, `CurrentInterfaceTelemetry`, `SmokeDetectorTelemetry`.
 - Ellenex: `EllenexTelemetry`, `EllenexScaling`, `ScalingProfile`.
-- Dragino: `Lht65Telemetry`.
+- Dragino: `Lht65Telemetry`, `Lht52Telemetry`, `Lds02Telemetry`, `Lwl02Telemetry`, `Ldds75Telemetry`, `Lse01Telemetry`, `Lsn50Telemetry`.
 
 ## Advanced exports
 
