@@ -6,5 +6,5 @@ export const netvox = namespace(NETVOX_MODELS);
 export { NETVOX_MODELS };
 export type {
   SinglePhaseTelemetry, ThreePhaseTelemetry, LightSinglePhaseTelemetry,
-  LightThreePhaseTelemetry, CurrentInterfaceTelemetry,
+  LightThreePhaseTelemetry, CurrentInterfaceTelemetry, SmokeDetectorTelemetry,
 } from './vendors/netvox/index.js';

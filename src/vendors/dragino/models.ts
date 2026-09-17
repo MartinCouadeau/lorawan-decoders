@@ -11,25 +11,25 @@ const SOURCE =
   'Implemented from the documented byte layout; no vendor code reused.';
 
 const LHT65: ModelDefinition<Lht65Telemetry, 'LHT65' | 'LHT65N'> = {
-  vendor: 'Dragino', model: 'LHT65', aliases: ['LHT65N'], fPort: 2, source: SOURCE,
+  vendor: 'Dragino', model: 'LHT65', aliases: ['LHT65N'], fPort: 2, otherFPorts: [3], source: SOURCE,
   description: 'Temperature and humidity sensor with external probe input (DS18B20, ADC, counter, interrupt)',
   keys: LHT65_KEYS, decode: decodeLht65,
 };
 
 const LHT52: ModelDefinition<Lht52Telemetry, 'LHT52'> = {
-  vendor: 'Dragino', model: 'LHT52', fPort: 2, source: SOURCE,
+  vendor: 'Dragino', model: 'LHT52', fPort: 2, otherFPorts: [3], source: SOURCE,
   description: 'Temperature and humidity sensor with optional DS18B20 probe',
   keys: LHT52_KEYS, decode: decodeLht52,
 };
 
 const LDS02: ModelDefinition<Lds02Telemetry, 'LDS02'> = {
-  vendor: 'Dragino', model: 'LDS02', fPort: 10, source: SOURCE,
+  vendor: 'Dragino', model: 'LDS02', fPort: 10, otherFPorts: [7], source: SOURCE,
   description: 'Door sensor with open count and last open duration',
   keys: LDS02_KEYS, decode: decodeLds02,
 };
 
 const LWL02: ModelDefinition<Lwl02Telemetry, 'LWL02'> = {
-  vendor: 'Dragino', model: 'LWL02', fPort: 10, source: SOURCE,
+  vendor: 'Dragino', model: 'LWL02', fPort: 10, otherFPorts: [7], source: SOURCE,
   description: 'Water leak sensor with leak count and last leak duration',
   keys: LWL02_KEYS, decode: decodeLwl02,
 };

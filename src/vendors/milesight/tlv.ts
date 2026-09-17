@@ -19,10 +19,12 @@ export interface ChannelEmit {
   channel: string;
 }
 
+/** Data bytes after the two header bytes. A function when the width depends on the data (VS351 history); it may only peek. */
+export type ChannelLength = number | ((r: ByteReader) => number);
+
 /** One channel: data length after the 2-byte header, keys it emits, reader. `T` carries the keys for type inference. */
 export interface ChannelSpec<T extends object = Telemetry> {
-  /** Data bytes after the two header bytes. */
-  length: number;
+  length: ChannelLength;
   keys: KeySpec<T>;
   read(r: ByteReader, emit: ChannelEmit): void;
 }
@@ -70,12 +72,13 @@ export function decodeTlv(bytes: Uint8Array, map: ChannelMap, ctx: DecodeContext
       break;
     }
 
-    if (!r.hasAtLeast(spec.length)) {
+    const length = typeof spec.length === 'number' ? spec.length : spec.length(r);
+    if (!r.hasAtLeast(length)) {
       ctx.warn({
         code: 'truncated_payload',
         channel: key,
         offset: r.offset,
-        message: `channel ${key} needs ${spec.length} byte(s) but only ${r.remaining} remain`,
+        message: `channel ${key} needs ${length} byte(s) but only ${r.remaining} remain`,
       });
       break;
     }
@@ -97,9 +100,9 @@ export function decodeTlv(bytes: Uint8Array, map: ChannelMap, ctx: DecodeContext
     spec.read(r, emit);
     // A spec consuming the wrong length would desync every later channel.
     const consumed = r.offset - before;
-    if (consumed !== spec.length) {
+    if (consumed !== length) {
       throw new Error(
-        `decoder bug: channel ${key} declares length ${spec.length} but consumed ${consumed} bytes`,
+        `decoder bug: channel ${key} declares length ${length} but consumed ${consumed} bytes`,
       );
     }
   }
@@ -212,7 +215,7 @@ export function enumState<K extends string>(
 
 /** Arbitrary multi-field payload. `length` must match what `read` consumes. */
 export function struct<T extends object>(
-  length: number,
+  length: ChannelLength,
   keys: KeySpec<T>,
   read: ChannelSpec['read'],
 ): ChannelSpec<T> {

@@ -155,3 +155,39 @@ describe('the model families collapse', () => {
     expect(() => run('Netvox', 'R718N1', '0149FF 24 0E15 01 00 00000000')).toThrow(/ReportType/);
   });
 });
+
+describe('Netvox RA02A (smoke detector)', () => {
+  it('decodes the manual worked example', () => {
+    const d = run('Netvox', 'RA02A', '010A019800000104000000', { fPort: 6 });
+    expect(d.telemetry).toEqual({
+      battery_voltage: 2.4, battery_low: true, fire_alarm: 'none', temperature_alarm: 'none', temperature: 26,
+    });
+    expect(d.warnings).toEqual([]);
+  });
+
+  it('reports both alarms and a negative temperature (synthetic)', () => {
+    const hot = run('Netvox', 'RA02A', '010A011E01010258000000');
+    expect(hot.telemetry).toEqual({
+      battery_voltage: 3, battery_low: false, fire_alarm: 'alarm', temperature_alarm: 'high_temperature_alarm', temperature: 60,
+    });
+    expect(valueOf(run('Netvox', 'RA02A', '010A011E0000FF9C000000'), 'temperature')).toBe(-10);
+  });
+
+  it('decodes the version report from the manual into attributes', () => {
+    const d = run('Netvox', 'RA02A', '010A000A15202303310000');
+    expect(d.telemetry).toEqual({});
+    expect(d.attributes).toMatchObject({ software_version: 'v1', date_code: '20230331' });
+  });
+
+  it('decodes a failed configuration response and warns on an undocumented command or wrong DeviceType', () => {
+    expect(run('Netvox', 'RA02A', '810A010000000000000000', { fPort: 7 }).attributes).toEqual({ config_status: 'failed' });
+    expect(run('Netvox', 'RA02A', '830A000000000000000000').warnings[0]?.code).toBe('undocumented_field');
+    expect(run('Netvox', 'RA02A', '810B000000000000000000').warnings[0]?.code).toBe('vendor_quirk');
+    expect(run('Netvox', 'RA02A', '0149010000000000000000').warnings[0]?.code).toBe('vendor_quirk');
+  });
+
+  it('rejects an unsupported ReportType and is typed through the namespace', () => {
+    expect(() => run('Netvox', 'RA02A', '010A050000000000000000')).toThrow(/ReportType/);
+    expect(netvox.ra02a('010A019800000104000000').fire_alarm).toBe('none');
+  });
+});

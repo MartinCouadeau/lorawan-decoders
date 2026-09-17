@@ -8,7 +8,9 @@ is written from the former.
 ## Milesight
 
 Source: payload tables and hex examples in the READMEs of
-[Milesight-IoT/SensorDecoders](https://github.com/Milesight-IoT/SensorDecoders).
+[Milesight-IoT/SensorDecoders](https://github.com/Milesight-IoT/SensorDecoders),
+and the product user guides (resource.milesight.com) for sentinel values and
+channels the READMEs omit.
 
 That repository is GPL-3.0. This implementation shares no code with it:
 declarative channel maps over one TLV engine, and a flat output keyed by a

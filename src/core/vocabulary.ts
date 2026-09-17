@@ -62,7 +62,11 @@ export const VOCABULARY: Record<string, Unit | null> = {
   current_2: Unit.MILLIAMPERE,
   current_3: Unit.MILLIAMPERE,
   current_4: Unit.MILLIAMPERE,
+  current_max: Unit.MILLIAMPERE,
+  current_min: Unit.MILLIAMPERE,
+  total_current: Unit.AMPERE_HOUR,
   current_alarm: null,
+  current_over_range_alarm: null,
   current_alarm_1: null,
   current_alarm_2: null,
   current_alarm_3: null,
@@ -103,6 +107,8 @@ export const VOCABULARY: Record<string, Unit | null> = {
   total_counter_out: Unit.COUNT,
   periodic_counter_in: Unit.COUNT,
   periodic_counter_out: Unit.COUNT,
+  total_counter_alarm: null,
+  periodic_counter_alarm: null,
 
   // --- states and events -----------------------------------------------------
   leakage_status: null,
@@ -113,6 +119,7 @@ export const VOCABULARY: Record<string, Unit | null> = {
   dry_contact: null,
   interrupt: null,
   alarm: null,
+  fire_alarm: null,
 };
 
 export const KEY_PATTERN = /^[a-z][a-z0-9]*(_[a-z0-9]+)*$/;

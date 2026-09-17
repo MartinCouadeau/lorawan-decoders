@@ -1,4 +1,5 @@
 import { describe, expect, expectTypeOf, it } from 'vitest';
+import type { Lsn50Telemetry, SmokeDetectorTelemetry } from '../../src/index.js';
 import { decode, dragino, ellenex, milesight, models, netvox } from '../../src/index.js';
 import { milesight as milesightOnly } from '../../src/milesight.js';
 import { netvox as netvoxOnly } from '../../src/netvox.js';
@@ -49,6 +50,9 @@ describe('vendor namespaces', () => {
     expectTypeOf(dragino.lht65n('CBF60B0D02250109C47FFF').temperature_external).toEqualTypeOf<number | undefined>();
     expectTypeOf(ellenex.pls2_l('01E80000D6000022').level).toEqualTypeOf<number | undefined>();
     expectTypeOf(milesight).not.toHaveProperty('em400_tdl');
+    expectTypeOf(dragino.lsn50v2('0B45 0105 021F 00 0105 0220')).toEqualTypeOf<Lsn50Telemetry>();
+    expectTypeOf(netvox.ra02a('010A019800000104000000')).toEqualTypeOf<SmokeDetectorTelemetry>();
+    expectTypeOf(milesight.ct103('0498B80B').current_status).toEqualTypeOf<string | undefined>();
   });
 });
 

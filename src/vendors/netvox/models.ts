@@ -1,8 +1,9 @@
 import { DecodeError } from '../../core/errors.js';
+import { ByteReader, round } from '../../core/reader.js';
 import type { Attributes, DecodeContext, DecodeResult, ModelDefinition, Reading } from '../../core/types.js';
 import { Unit } from '../../core/units.js';
 import {
-  NETVOX_UPLINK_FPORT, currentReading, readBattery, readFrame, readVersionReport,
+  NETVOX_CONFIG_FPORT, NETVOX_UPLINK_FPORT, currentReading, readBattery, readFrame, readVersionReport,
   scalingMultiplier, thresholdAlarms, unpackMultipliers,
 } from './frame.js';
 
@@ -54,6 +55,14 @@ export interface LightSinglePhaseTelemetry extends SinglePhaseTelemetry {
 
 export interface LightThreePhaseTelemetry extends ThreePhaseTelemetry {
   illuminance?: number;
+}
+
+export interface SmokeDetectorTelemetry {
+  battery_voltage?: number;
+  battery_low?: boolean;
+  fire_alarm?: string;
+  temperature_alarm?: string;
+  temperature?: number;
 }
 
 export interface CurrentInterfaceTelemetry {
@@ -225,6 +234,66 @@ function decodeN360(bytes: Uint8Array, ctx: DecodeContext): DecodeResult {
   return { readings, attributes };
 }
 
+/**
+ * RA02A — smoke detector with temperature. DeviceType 0x0A. ReportType 0x01:
+ * battery, fire alarm byte, high-temperature alarm byte (fixed 60 °C),
+ * temperature int16 0.1 °C, 3 reserved. Frames with bit 7 set in byte 0 are
+ * fPort 7 configuration responses → attributes only.
+ */
+const RA02A_DEVICE_TYPE = 0x0a;
+
+function decodeRa02a(bytes: Uint8Array, ctx: DecodeContext): DecodeResult {
+  if (bytes.length >= 3 && (bytes[0]! & 0x80) !== 0) return decodeRa02aConfig(bytes, ctx);
+
+  const { reportType, reader: r } = readFrame(bytes, RA02A_DEVICE_TYPE, ctx);
+  const readings: Reading[] = [];
+  let attributes: Attributes = {};
+
+  switch (reportType) {
+    case 0x00:
+      attributes = readVersionReport(r);
+      break;
+    case 0x01:
+      readings.push(...readBattery(r));
+      readings.push({ key: 'fire_alarm', value: r.u8() === 1 ? 'alarm' : 'none' });
+      readings.push({ key: 'temperature_alarm', value: r.u8() === 1 ? 'high_temperature_alarm' : 'none' });
+      readings.push({ key: 'temperature', unit: Unit.CELSIUS, value: round(r.i16be() / 10, 1) });
+      break;
+    default:
+      unsupported(reportType, ctx);
+  }
+  return { readings, attributes };
+}
+
+/** 0x81 ConfigReportRsp: status. 0x82 ReadConfigReportRsp: min/max report time (s), battery change (0.1 V). */
+function decodeRa02aConfig(bytes: Uint8Array, ctx: DecodeContext): DecodeResult {
+  const r = new ByteReader(bytes);
+  const command = r.u8();
+  const deviceType = r.u8();
+  if (deviceType !== RA02A_DEVICE_TYPE) {
+    ctx.warn({
+      code: 'vendor_quirk',
+      offset: 1,
+      message: `DeviceType 0x${deviceType.toString(16)} does not match 0x0a expected for ${ctx.model}`,
+    });
+  }
+  const attributes: Attributes = {};
+  if (command === 0x81) {
+    attributes['config_status'] = r.u8() === 0 ? 'success' : 'failed';
+  } else if (command === 0x82 && r.hasAtLeast(5)) {
+    attributes['min_time'] = r.u16be();
+    attributes['max_time'] = r.u16be();
+    attributes['battery_change'] = round(r.u8() / 10, 1);
+  } else {
+    ctx.warn({
+      code: 'undocumented_field',
+      offset: 0,
+      message: `command response 0x${command.toString(16)} is not documented for ${ctx.model}`,
+    });
+  }
+  return { readings: [], attributes };
+}
+
 function unsupported(reportType: number, ctx: DecodeContext): never {
   throw new DecodeError(
     'unsupported_report',
@@ -272,4 +341,11 @@ const R718N360: ModelDefinition<CurrentInterfaceTelemetry, 'R718N360'> = {
   decode: decodeN360,
 };
 
-export const NETVOX_MODELS = [R718N1, R718N3, R718NL1, R718NL3, R718N360] as const;
+const RA02A: ModelDefinition<SmokeDetectorTelemetry, 'RA02A'> = {
+  vendor: 'Netvox', model: 'RA02A', source: SOURCE, fPort: NETVOX_UPLINK_FPORT, otherFPorts: [NETVOX_CONFIG_FPORT],
+  description: 'Smoke detector with temperature and fixed 60 °C high-temperature alarm',
+  keys: { ...BATTERY_KEYS, fire_alarm: null, temperature_alarm: null, temperature: Unit.CELSIUS },
+  decode: decodeRa02a,
+};
+
+export const NETVOX_MODELS = [R718N1, R718N3, R718NL1, R718NL3, R718N360, RA02A] as const;

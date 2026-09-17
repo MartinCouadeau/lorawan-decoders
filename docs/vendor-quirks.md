@@ -44,6 +44,8 @@ sentinel, not −0.1. Live channels, alarm channels and history records alike.
 | GS301 | humidity | `ff` | `collection_failed` | fault |
 | EM400-TLD, EM400-MUD | distance | `65000` | `tilted` when the same frame has `position: tilt` (tilt switch turned the sensor off), else `out_of_range`. Field report, not in vendor docs. | state |
 | EM310-UDL | distance | `0` | `out_of_range` (≥ 4.5 m). ≤ 30 mm is clamped to 30 and reported as a value. | state |
+| CT101, CT103, CT105 | current | `ffff` | `collection_failed` | fault |
+| same | temperature (NTC) | `ffff` / `fffd` | `collection_failed` / `out_of_range` | fault / state |
 
 Sources: EM500 user guides ("fails to collect → all ffff; outside the
 measuring range → fffd"), GS301 user guide ("ffff or ff = collection error,
@@ -85,6 +87,24 @@ in history. Same key `soil_moisture`.
 **AM104/AM107 illumination** channel `06/65` carries three uint16 values:
 `illuminance`, `illuminance_ir_visible`, `illuminance_ir`.
 
+**CT10x (CT101/CT103/CT105)** share one format. Current is 0.01 A on the
+wire → `current`, `current_max`, `current_min` in mA. `03/97` is
+accumulated current in Ah → `total_current`; it wraps at `ffffffff`. `10/99`
+total energy (kWh → `energy`) is in the user guide only, not the README.
+`84/98` alarm byte is a bitfield (1 threshold, 2 release, 4 over range, 8
+over range release; the guide shows 0x05 and 0x0a) → `current_alarm` and
+`current_over_range_alarm`, each present only when its bits are set. The
+README example `0498B80B00000000` has four trailing zero bytes against a
+2-byte table entry; guide and capture confirm 2 bytes. Low-voltage alarm is
+not decoded: the guide's table says `13/73`, its example `13/75`, the README
+has neither → `unknown_channel`.
+
+**VS351** counters are uint16 and wrap at 65535 (VS132 totals are uint32).
+History `20/ce` is 9 bytes, or 13 when its `data_type` byte is 1 (periodic +
+totals); the only variable-length channel in the library, resolved by
+peeking that byte. `83/67` adds `high_temperature_alarm` /
+`high_temperature_alarm_release` to the threshold pair.
+
 **AM319** ships as HCHO or O3 variants with different history layouts, so they
 are two models: `AM319-HCHO` (alias `AM319`) and `AM319-O3`.
 
@@ -107,6 +127,13 @@ ReportType 0x03: three 2-bit fields, `00`→1, `01`→5, `10`→10, `11`→100.
 ```ts
 netvox.r718n3(payload, { scaling: { multiplier2: 5, multiplier3: 100 } });
 ```
+
+**RA02A** (smoke detector, DeviceType 0x0A). ReportType 0x01: battery, fire
+alarm byte, high-temperature alarm byte (fixed 60 °C), temperature int16
+0.1 °C → `fire_alarm`, `temperature_alarm`, `temperature`. fPort 7
+configuration responses are decoded for this model only: `0x81` →
+`attributes.config_status`; `0x82` → `attributes.min_time`, `max_time` (s),
+`battery_change` (V). No telemetry.
 
 **R718N360 ReportType 0x02 has no battery byte.** Channel values are raw
 counts → `channel_1..3` with unit `raw`.
@@ -217,7 +244,7 @@ SHT temperature, type, time) and go to `history`; all-zero entries skipped.
 
 `test/vendors/captures.test.ts` holds uplinks captured from production
 devices through ThingPark: Milesight EM300-SLD, AM307, AM308, AM308L,
-AM319-HCHO, WS301; Dragino LHT65N; Ellenex PLS2-L, PTS2-L, PDS2-L (legacy
-and V6). Every other format is verified against vendor documentation only.
+AM319-HCHO, WS301, CT103, VS351; Netvox RA02A; Dragino LHT65N; Ellenex
+PLS2-L, PTS2-L, PDS2-L (legacy and V6). Every other format is verified against vendor documentation only.
 More captures are the most useful contribution: open an issue with model,
 hex payload, fPort, and what the device's own platform showed.

@@ -20,7 +20,7 @@ for (const vendor of registry.vendors()) {
       : aliases.length <= 4 ? aliases.map((a) => `\`${a}\``).join(', ')
         : `${aliases.slice(0, 3).map((a) => `\`${a}\``).join(', ')} … (${aliases.length} names)`;
     rows.push(
-      `| ${def.model} | \`'${def.model.toLowerCase()}'\` | \`${ns}.${accessorName(def.model)}\` | ${also} | ${def.fPort ?? '—'} | ${def.description} |`,
+      `| ${def.model} | \`'${def.model.toLowerCase()}'\` | \`${ns}.${accessorName(def.model)}\` | ${also} | ${def.fPort === undefined ? '—' : [def.fPort, ...(def.otherFPorts ?? [])].join(', ')} | ${def.description} |`,
     );
   }
   rows.push('\n### Telemetry keys\n');

@@ -13,6 +13,7 @@ export const Unit = {
   HECTOPASCAL: 'hPa',
   // electrical
   MILLIAMPERE: 'mA',
+  AMPERE_HOUR: 'Ah',
   VOLT: 'V',
   WATT: 'W',
   KILOWATT_HOUR: 'kWh',

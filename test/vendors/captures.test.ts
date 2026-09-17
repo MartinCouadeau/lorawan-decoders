@@ -49,6 +49,19 @@ describe('field captures: Milesight', () => {
     expect(d.warnings[0]?.code).toBe('unknown_channel');
   });
 
+  it('CT103 total and instantaneous current', () => {
+    expect(run('Milesight', 'CT103', '039707a61b000498e506', { fPort: 85 }).telemetry)
+      .toEqual({ total_current: 18119.75, current: 17650 });        // platform showed 17.65 A
+  });
+
+  it('VS351 status and counter frames', () => {
+    expect(run('Milesight', 'VS351', '01756403670C01', { fPort: 85 }).telemetry)
+      .toEqual({ battery: 100, temperature: 26.8 });
+    expect(run('Milesight', 'VS351', '04CC1200160005CC13001400', { fPort: 85 }).telemetry).toEqual({
+      total_counter_in: 18, total_counter_out: 22, periodic_counter_in: 19, periodic_counter_out: 20,
+    });
+  });
+
   it('WS301', () => {
     expect(run('Milesight', 'WS301', '017564030000040001', { fPort: 2 }).telemetry)
       .toEqual({ battery: 100, magnet_status: 'close', tamper_status: 'uninstalled' });
@@ -97,5 +110,21 @@ describe('field captures: Ellenex', () => {
       expect(d.attributes['data_type']).toBeGreaterThan(0);
       expect(d.warnings[0]?.code).toBe('undocumented_field');
     }
+  });
+});
+
+describe('field captures: Netvox', () => {
+  it('RA02A data report with the low-battery bit set', () => {
+    expect(run('Netvox', 'RA02A', '010A019F00000104000000', { fPort: 6 }).telemetry).toEqual({
+      battery_voltage: 3.1, battery_low: true, fire_alarm: 'none', temperature_alarm: 'none', temperature: 26,
+    });
+  });
+
+  it('RA02A configuration responses on fPort 7 carry attributes only', () => {
+    const read = run('Netvox', 'RA02A', '820A0E100E100100000000', { fPort: 7 });
+    expect(read.telemetry).toEqual({});
+    expect(read.attributes).toEqual({ min_time: 3600, max_time: 3600, battery_change: 0.1 });
+    expect(read.warnings).toEqual([]);                          // fPort 7 is documented, strict stays quiet
+    expect(run('Netvox', 'RA02A', '810A000000000000000000', { fPort: 7 }).attributes).toEqual({ config_status: 'success' });
   });
 });
