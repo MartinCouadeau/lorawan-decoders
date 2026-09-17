@@ -78,7 +78,7 @@ import { ellenex } from 'lorawan-decoders/ellenex';
 | PTS3-L | `battery_voltage` (V), `pressure` (kPa), `differential_pressure` (kPa), `temperature` (°C), `level` (m), `distance` (mm), `current` (mA), `current_1` (mA), `current_2` (mA), `current_3` (mA), `current_4` (mA), `input_voltage` (V), `adc_raw` (raw), `pulse_count` (count), `dry_contact` |
 | RS1-L | `battery_voltage` (V), `pressure` (kPa), `differential_pressure` (kPa), `temperature` (°C), `level` (m), `distance` (mm), `current` (mA), `current_1` (mA), `current_2` (mA), `current_3` (mA), `current_4` (mA), `input_voltage` (V), `adc_raw` (raw), `pulse_count` (count), `dry_contact`, `sensor_reading` (raw) |
 
-_Source: Ellenex public payload decoders (github.com/ellenex/lorawan-payload-decoders), the Apache-2.0 TTN Device Repository codecs, and field captures from ThingPark. Implemented from the documented layout; no vendor code reused (their repo carries no licence)._
+_Source: Ellenex public payload decoders (github.com/ellenex/lorawan-payload-decoders), the Apache-2.0 TTN Device Repository codecs, and hardware test vectors. Implemented from the documented layout; no vendor code reused (their repo carries no licence)._
 
 ## Milesight
 

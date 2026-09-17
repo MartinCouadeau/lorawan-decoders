@@ -34,7 +34,7 @@ Any rating: `netvox.r718n317`, `netvox.r718n3100e`.
 ```ts
 import { ellenex } from 'lorawan-decoders';
 
-ellenex.pls2_l('0b1f00064f000022', { fPort: 15 });            // legacy, field capture
+ellenex.pls2_l('0a0100064f000022', { fPort: 15 });            // legacy frame
 // { level: 1.615, battery_voltage: 3.4 }
 
 ellenex.pls2_l('BF614CFA3FCEC8C86176190CF8FF', { fPort: 15 }); // V6 CBOR, same model
@@ -173,12 +173,12 @@ app.post('/uplink/thingpark', (req, res) => {
 });
 ```
 
-A real EM300-SLD event, trimmed:
+An EM300-SLD event, trimmed (identifiers are placeholders):
 
 ```json
-{ "DevEUI_uplink": { "Time": "2024-12-04T19:55:56.328+00:00", "DevEUI": "A84041…",
-    "FPort": 2, "payload_hex": "03671001046871050001", "LrrRSSI": -105.2, "LrrSNR": -0.75,
-    "CustomerData": { "tags": ["model:em300-sld", "ct:…"] } } }
+{ "DevEUI_uplink": { "Time": "2025-01-01T12:00:00.000+00:00", "DevEUI": "0011223344556677",
+    "FPort": 2, "payload_hex": "03671001046871050001", "LrrRSSI": -98.0, "LrrSNR": 7.5,
+    "CustomerData": { "tags": ["model:em300-sld"] } } }
 ```
 
 ```json

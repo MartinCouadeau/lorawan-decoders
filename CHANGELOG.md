@@ -15,7 +15,7 @@
   `temperature`; fPort 7 configuration responses → attributes.
 - Milesight TLV engine: a channel's length may depend on its data (VS351
   history is 9 or 13 bytes).
-- Unit `Ah`. Field captures for all three models in
+- Unit `Ah`. Hardware vectors for all three models in
   `test/vendors/captures.test.ts`.
 - `otherFPorts` on model definitions and `models()`: documented secondary
   ports (LHT65/LHT52 datalog 3, LDS02/LWL02 EDC 7, RA02A configuration 7).
@@ -47,7 +47,7 @@
 ### Changed
 
 - Ellenex legacy frames: readings are engineering units on the wire (mbar,
-  mm, 0.01 °C), confirmed on field captures. `pressure`, `level` and
+  mm, 0.01 °C), confirmed on hardware. `pressure`, `level` and
   `temperature` are emitted directly; `level_raw`, `pressure_raw`,
   `differential_pressure_raw`, `temperature_raw` are gone. Bytes 0–1 are the
   device id / frame counter (`attributes.device_id`, `frame_counter`), byte 2
@@ -76,8 +76,8 @@
   layout for types 9/10 and fPort 3 datalog → history. LHT52 fPort 3
   datalog → history. LSE01 MOD=1 raw mode → attributes. LDS02/LWL02 EDC
   5-byte packet → `event_count`.
-- `test/vendors/captures.test.ts`: production ThingPark uplinks for
-  Milesight, Dragino and Ellenex, the first hardware-verified vectors.
+- `test/vendors/captures.test.ts`: uplinks recorded from real Milesight,
+  Dragino and Ellenex hardware, the first hardware-verified vectors.
 
 ## 0.2.0
 

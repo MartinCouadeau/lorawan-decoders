@@ -156,9 +156,9 @@ Override with `scaling: { generation: 'legacy' | 'v6' }`.
 **Legacy bytes 0–2.** Bytes 0–1 are the last two bytes of the DevEUI in the
 first packet and a frame counter in later packets → `attributes.device_id`,
 `attributes.frame_counter`. Byte 2 is the data type: `0x00` sensor reading;
-other values are configuration echoes (`0x01` interval, `0x16` auto-reset seen
-in captures) → kept in `attributes.data_type` / `attributes.data` with an
-`undocumented_field` warning, no telemetry. Confirmed on ThingPark captures.
+other values are configuration echoes (`0x01` interval, `0x16` auto-reset
+observed) → kept in `attributes.data_type` / `attributes.data` with an
+`undocumented_field` warning, no telemetry. Confirmed on hardware.
 
 **Legacy readings are engineering units on the wire.** mbar for pressure and
 differential pressure, mm for level, 0.01 °C for temperature. Emitted as
@@ -242,9 +242,9 @@ SHT temperature, type, time) and go to `history`; all-zero entries skipped.
 
 ## Hardware verification
 
-`test/vendors/captures.test.ts` holds uplinks captured from production
-devices through ThingPark: Milesight EM300-SLD, AM307, AM308, AM308L,
+`test/vendors/captures.test.ts` holds reference uplinks recorded from real
+hardware (payload and fPort only, no device identifiers): Milesight EM300-SLD, AM307, AM308, AM308L,
 AM319-HCHO, WS301, CT103, VS351; Netvox RA02A; Dragino LHT65N; Ellenex
 PLS2-L, PTS2-L, PDS2-L (legacy and V6). Every other format is verified against vendor documentation only.
-More captures are the most useful contribution: open an issue with model,
-hex payload, fPort, and what the device's own platform showed.
+More hardware vectors are the most useful contribution: open an issue with
+model, hex payload, fPort, and the values the device's platform showed.

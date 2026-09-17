@@ -182,9 +182,9 @@ Each model definition has a `source` field. See [NOTICE.md](NOTICE.md).
 
 v0.4. Milesight EM300-SLD, AM307/AM308/AM308L, AM319-HCHO, WS301, CT103,
 VS351, Netvox RA02A, Dragino LHT65N and Ellenex PLS2-L/PTS2-L/PDS2-L are
-verified against production captures (`test/vendors/captures.test.ts`).
-Everything else is verified against vendor documentation only. More captures
-are welcome.
+verified against uplinks from real hardware (`test/vendors/captures.test.ts`).
+Everything else is verified against vendor documentation only. More hardware
+vectors are welcome.
 
 ## Licence
 

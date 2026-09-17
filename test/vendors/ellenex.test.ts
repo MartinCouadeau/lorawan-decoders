@@ -3,8 +3,8 @@ import { run, unitOf, valueOf } from '../helpers.js';
 import { decodeCbor, looksLikeCbor } from '../../src/vendors/ellenex/cbor.js';
 import { ellenex } from '../../src/index.js';
 
-// Legacy vectors: TTN Device Repository entries and ThingPark field captures.
-// V6 vectors: Ellenex V6 codec test data and ThingPark field captures.
+// Legacy vectors: TTN Device Repository entries and hardware vectors.
+// V6 vectors: Ellenex V6 codec test data and hardware vectors.
 describe('Ellenex legacy 8-byte frame', () => {
   it('decodes the published negative-reading vector as kPa', () => {
     const d = run('Ellenex', 'PTS2-L', '01E800FB58000022', { fPort: 15 });
@@ -26,10 +26,10 @@ describe('Ellenex legacy 8-byte frame', () => {
     });
   });
 
-  it('reports level in metres from the wire millimetres (field capture)', () => {
-    const d = run('Ellenex', 'PLS2-L', '0b1f00064f000022', { fPort: 15 });
+  it('reports level in metres from the wire millimetres (hardware vector)', () => {
+    const d = run('Ellenex', 'PLS2-L', '0a0100064f000022', { fPort: 15 });
     expect(d.telemetry).toEqual({ level: 1.615, battery_voltage: 3.4 });
-    expect(d.attributes).toEqual({ device_id: '0b1f' });
+    expect(d.attributes).toEqual({ device_id: '0a01' });
     expect(d.warnings).toEqual([]);
   });
 
@@ -50,10 +50,10 @@ describe('Ellenex legacy 8-byte frame', () => {
       .toThrow(/range/);
   });
 
-  it('keeps configuration echoes out of telemetry (field capture)', () => {
-    const d = run('Ellenex', 'PDS2-L', '1dc216018021', { fPort: 15 });
+  it('keeps configuration echoes out of telemetry (hardware vector)', () => {
+    const d = run('Ellenex', 'PDS2-L', '0a0316018021', { fPort: 15 });
     expect(d.telemetry).toEqual({});
-    expect(d.attributes).toEqual({ device_id: '1dc2', data_type: 0x16, data: '018021' });
+    expect(d.attributes).toEqual({ device_id: '0a03', data_type: 0x16, data: '018021' });
     expect(d.warnings[0]?.code).toBe('undocumented_field');
   });
 
