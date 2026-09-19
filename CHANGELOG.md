@@ -1,5 +1,10 @@
 # Changelog
 
+## Unreleased
+
+- Tooling: ESLint 10 flat config; lint runs in CI and covers `scripts/` and
+  the CLI.
+
 ## 0.4.0
 
 ### Added
