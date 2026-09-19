@@ -11,7 +11,7 @@ import { Unit } from '../../core/units.js';
  *   3-4  primary reading, int16 BE, engineering units (mbar, mm)
  *   5-6  secondary reading, int16 BE (temperature 0.01 °C where fitted)
  *   7    battery, uint8, 0.1 V
- * Layout and units confirmed on field captures (see docs/vendor-quirks.md).
+ * Layout and units confirmed on hardware (see docs/vendor-quirks.md).
  */
 
 export const ELLENEX_FPORT = 15;

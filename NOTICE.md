@@ -48,7 +48,6 @@ Device Repository entries. Dragino's decoder repository was not consulted.
 ## Test vectors
 
 Where a vendor publishes a payload with its decoded values, that pair is a
-test case. `test/vendors/captures.test.ts` adds uplinks captured from
-production devices through ThingPark (payload and fPort only; no device
-identifiers). Formats verified against documentation only are listed in
+test case. `test/vendors/captures.test.ts` adds reference uplinks recorded
+from real hardware (payload and fPort only; no device identifiers). Formats verified against documentation only are listed in
 docs/vendor-quirks.md.
